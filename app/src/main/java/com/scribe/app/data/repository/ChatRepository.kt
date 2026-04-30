@@ -12,13 +12,9 @@ import java.util.UUID
 class ChatRepository(private val messageDao: MessageDao) {
 
     suspend fun saveMessages(conversationId: String, messages: List<ChatMessage>) {
+        // Replace entire conversation with current message list
+        messageDao.deleteConversation(conversationId)
         for (msg in messages) {
-            val existing = messageDao.getMessages(conversationId)
-            // simple dedup — if last message matches, skip
-            if (existing.isNotEmpty() &&
-                existing.last().role == msg.role.name &&
-                existing.last().content == msg.content
-            ) continue
             messageDao.insert(
                 MessageEntity(
                     conversationId = conversationId,
