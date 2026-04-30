@@ -1,29 +1,17 @@
 package com.scribe.app.data.local
 
 import android.content.Context
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.*
-import androidx.datastore.preferences.preferencesDataStore
+import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.scribe.app.data.model.Provider
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "scribe_settings")
-
-class SettingsDataStore(private val context: Context) {
+class SettingsDataStore(context: Context) {
 
     companion object {
-        private val KEY_PROVIDER = stringPreferencesKey("provider")
-        private val KEY_OPENAI_URL = stringPreferencesKey("openai_base_url")
-        private val KEY_OPENAI_KEY = stringPreferencesKey("openai_api_key")
-        private val KEY_OPENAI_MODEL = stringPreferencesKey("openai_model")
-        private val KEY_ANTHROPIC_URL = stringPreferencesKey("anthropic_base_url")
-        private val KEY_ANTHROPIC_KEY = stringPreferencesKey("anthropic_api_key")
-        private val KEY_ANTHROPIC_MODEL = stringPreferencesKey("anthropic_model")
-        private val KEY_SHOW_REASONING = booleanPreferencesKey("show_reasoning")
-        private val KEY_AI_THINKING = booleanPreferencesKey("ai_thinking")
-        private val KEY_LAST_SKILL_ID = stringPreferencesKey("last_skill_id")
-
         const val DEFAULT_OPENAI_URL = "https://api.deepseek.com"
         const val DEFAULT_OPENAI_MODEL = "deepseek-v4-flash"
         const val DEFAULT_ANTHROPIC_URL = "https://api.anthropic.com"
@@ -43,50 +31,72 @@ class SettingsDataStore(private val context: Context) {
         val lastSkillId: String = ""
     )
 
-    val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
-        AppSettings(
-            provider = try { Provider.valueOf(prefs[KEY_PROVIDER] ?: "OPENAI") } catch (_: Exception) { Provider.OPENAI },
-            openaiBaseUrl = prefs[KEY_OPENAI_URL] ?: DEFAULT_OPENAI_URL,
-            openaiApiKey = prefs[KEY_OPENAI_KEY] ?: "",
-            openaiModel = prefs[KEY_OPENAI_MODEL] ?: DEFAULT_OPENAI_MODEL,
-            anthropicBaseUrl = prefs[KEY_ANTHROPIC_URL] ?: DEFAULT_ANTHROPIC_URL,
-            anthropicApiKey = prefs[KEY_ANTHROPIC_KEY] ?: "",
-            anthropicModel = prefs[KEY_ANTHROPIC_MODEL] ?: DEFAULT_ANTHROPIC_MODEL,
-            showReasoning = prefs[KEY_SHOW_REASONING] ?: true,
-            aiThinking = prefs[KEY_AI_THINKING] ?: true,
-            lastSkillId = prefs[KEY_LAST_SKILL_ID] ?: ""
+    private val prefs: SharedPreferences by lazy {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+
+        EncryptedSharedPreferences.create(
+            context,
+            "scribe_secure_settings",
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
     }
 
-    suspend fun setProvider(provider: Provider) {
-        context.dataStore.edit { it[KEY_PROVIDER] = provider.name }
+    private val _settings = MutableStateFlow(loadSettings())
+    val settings: Flow<AppSettings> = _settings.asStateFlow()
+
+    private fun loadSettings(): AppSettings = prefs.run {
+        AppSettings(
+            provider = try { Provider.valueOf(getString("provider", "OPENAI")!!) } catch (_: Exception) { Provider.OPENAI },
+            openaiBaseUrl = getString("openai_base_url", DEFAULT_OPENAI_URL) ?: DEFAULT_OPENAI_URL,
+            openaiApiKey = getString("openai_api_key", "") ?: "",
+            openaiModel = getString("openai_model", DEFAULT_OPENAI_MODEL) ?: DEFAULT_OPENAI_MODEL,
+            anthropicBaseUrl = getString("anthropic_base_url", DEFAULT_ANTHROPIC_URL) ?: DEFAULT_ANTHROPIC_URL,
+            anthropicApiKey = getString("anthropic_api_key", "") ?: "",
+            anthropicModel = getString("anthropic_model", DEFAULT_ANTHROPIC_MODEL) ?: DEFAULT_ANTHROPIC_MODEL,
+            showReasoning = getBoolean("show_reasoning", true),
+            aiThinking = getBoolean("ai_thinking", true),
+            lastSkillId = getString("last_skill_id", "") ?: ""
+        )
     }
 
-    suspend fun setOpenAIConfig(url: String, key: String, model: String) {
-        context.dataStore.edit {
-            it[KEY_OPENAI_URL] = url
-            it[KEY_OPENAI_KEY] = key
-            it[KEY_OPENAI_MODEL] = model
+    private fun saveAndNotify(block: SharedPreferences.Editor.() -> Unit) {
+        prefs.edit().apply { block(); apply() }
+        _settings.value = loadSettings()
+    }
+
+    fun setProvider(provider: Provider) {
+        saveAndNotify { putString("provider", provider.name) }
+    }
+
+    fun setOpenAIConfig(url: String, key: String, model: String) {
+        saveAndNotify {
+            putString("openai_base_url", url)
+            putString("openai_api_key", key)
+            putString("openai_model", model)
         }
     }
 
-    suspend fun setAnthropicConfig(url: String, key: String, model: String) {
-        context.dataStore.edit {
-            it[KEY_ANTHROPIC_URL] = url
-            it[KEY_ANTHROPIC_KEY] = key
-            it[KEY_ANTHROPIC_MODEL] = model
+    fun setAnthropicConfig(url: String, key: String, model: String) {
+        saveAndNotify {
+            putString("anthropic_base_url", url)
+            putString("anthropic_api_key", key)
+            putString("anthropic_model", model)
         }
     }
 
-    suspend fun setShowReasoning(show: Boolean) {
-        context.dataStore.edit { it[KEY_SHOW_REASONING] = show }
+    fun setShowReasoning(show: Boolean) {
+        saveAndNotify { putBoolean("show_reasoning", show) }
     }
 
-    suspend fun setAiThinking(thinking: Boolean) {
-        context.dataStore.edit { it[KEY_AI_THINKING] = thinking }
+    fun setAiThinking(thinking: Boolean) {
+        saveAndNotify { putBoolean("ai_thinking", thinking) }
     }
 
-    suspend fun setLastSkillId(id: String) {
-        context.dataStore.edit { it[KEY_LAST_SKILL_ID] = id }
+    fun setLastSkillId(id: String) {
+        saveAndNotify { putString("last_skill_id", id) }
     }
 }
