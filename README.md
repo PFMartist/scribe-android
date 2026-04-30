@@ -1,8 +1,12 @@
 # Scribe — 自动手记人偶 (Android)
 
+> 本项目为庆祝凯尔希的回归，以及《明日方舟》七周年而诞生。
+
 Kotlin + Jetpack Compose 构建的 AI 对话客户端，支持 OpenAI 兼容 / Anthropic 双 API、SSE 流式响应、角色扮演 Skill 系统。
 
-源自 Bash 终端版 [Scribe](https://github.com/PFMartist/scribe)。
+源自 Bash 终端版 [Scribe](https://github.com/PFMartist/scribe.sh)。
+
+> “自动手记人偶”的名称来自《紫罗兰永恒花园》。
 
 ## 功能
 
