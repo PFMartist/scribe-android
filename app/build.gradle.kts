@@ -8,6 +8,7 @@ plugins {
 android {
     namespace = "com.scribe.app"
     compileSdk = 35
+    base.archivesName = "scribe"
 
     defaultConfig {
         applicationId = "com.scribe.app"
