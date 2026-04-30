@@ -21,6 +21,7 @@ data class ChatUiState(
     val conversationId: String = "",
     val conversationIds: List<String> = emptyList(),
     val skillName: String? = null,
+    val skillMetas: List<SkillManager.SkillMeta> = emptyList(),
     val provider: Provider = Provider.OPENAI,
     val model: String = "",
     val showReasoning: Boolean = true,
@@ -76,6 +77,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.update { it.copy(conversationIds = chatRepo.getAllConversationIds()) }
         }
+
+        refreshSkillMetas()
+    }
+
+    private fun refreshSkillMetas() {
+        _uiState.update { it.copy(skillMetas = skillRepo.getSkillMetas()) }
     }
 
     fun newConversation() {
@@ -265,6 +272,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteSkill(skillId: String) {
         skillRepo.deleteSkill(skillId)
+        refreshSkillMetas()
         if (currentSkill?.id == skillId) {
             currentSkill = null
             _uiState.update { it.copy(skillName = null) }
@@ -274,11 +282,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun importSkill(content: String): Boolean {
-        return skillRepo.importSkill(content) != null
+        val result = skillRepo.importSkill(content) != null
+        if (result) refreshSkillMetas()
+        return result
     }
 
     fun importSkillFromZip(uri: android.net.Uri): Boolean {
-        return skillRepo.importSkillFromZip(uri) != null
+        val result = skillRepo.importSkillFromZip(uri) != null
+        if (result) refreshSkillMetas()
+        return result
     }
 
     private fun loadSkillInternal(skillId: String) {
