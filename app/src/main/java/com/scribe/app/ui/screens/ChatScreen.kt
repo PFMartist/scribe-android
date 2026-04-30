@@ -160,6 +160,7 @@ fun ChatScreen(
         }
     ) {
         Scaffold(
+            modifier = Modifier.imePadding(),
             topBar = {
                 TopAppBar(
                     title = {
@@ -193,7 +194,6 @@ fun ChatScreen(
                 Column(
                     modifier = Modifier
                         .navigationBarsPadding()
-                        .imePadding()
                 ) {
                     if (uiState.tokenUsage != null) {
                         Text(
