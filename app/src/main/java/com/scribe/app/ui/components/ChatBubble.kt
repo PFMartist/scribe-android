@@ -5,16 +5,19 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.scribe.app.data.model.MessageRole
@@ -26,6 +29,8 @@ fun ChatBubble(
     reasoning: String = "",
     reasoningExpanded: Boolean = true,
     onToggleReasoning: () -> Unit = {},
+    onDelete: (() -> Unit)? = null,
+    onRegenerate: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     if (role == MessageRole.SYSTEM) return
@@ -42,6 +47,13 @@ fun ChatBubble(
         Box(
             modifier = Modifier
                 .widthIn(max = 340.dp)
+                .then(
+                    if (isUser && onDelete != null) {
+                        Modifier.pointerInput(Unit) {
+                            detectTapGestures(onLongPress = { onDelete.invoke() })
+                        }
+                    } else Modifier
+                )
                 .clip(
                     RoundedCornerShape(
                         topStart = 16.dp,
@@ -57,12 +69,31 @@ fun ChatBubble(
                 .padding(12.dp)
         ) {
             Column {
-                Text(
-                    text = if (isUser) "You" else "自动手记人偶",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
-                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (isUser) "You" else "自动手记人偶",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                    if (!isUser && onRegenerate != null) {
+                        IconButton(
+                            onClick = onRegenerate,
+                            modifier = Modifier.size(20.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "重新生成",
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
+                }
 
                 // Collapsible reasoning section (assistant only)
                 if (!isUser && reasoning.isNotBlank()) {

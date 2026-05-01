@@ -1,18 +1,14 @@
 package com.scribe.app.data.repository
 
-import android.content.Context
 import com.scribe.app.data.local.MessageDao
 import com.scribe.app.data.local.MessageEntity
 import com.scribe.app.data.model.ChatMessage
 import com.scribe.app.data.model.MessageRole
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import java.util.UUID
 
 class ChatRepository(private val messageDao: MessageDao) {
 
-    suspend fun saveMessages(conversationId: String, messages: List<ChatMessage>) {
-        // Replace entire conversation with current message list
+    suspend fun saveMessages(conversationId: String, messages: List<ChatMessage>, skillId: String? = null) {
         messageDao.deleteConversation(conversationId)
         for (msg in messages) {
             messageDao.insert(
@@ -20,20 +16,24 @@ class ChatRepository(private val messageDao: MessageDao) {
                     conversationId = conversationId,
                     role = msg.role.name,
                     content = msg.content,
+                    skillId = skillId,
                     timestamp = msg.timestamp
                 )
             )
         }
     }
 
-    suspend fun loadMessages(conversationId: String): List<ChatMessage> {
-        return messageDao.getMessages(conversationId).map {
+    suspend fun loadMessages(conversationId: String): Pair<List<ChatMessage>, String?> {
+        val entities = messageDao.getMessages(conversationId)
+        val skillId = entities.firstOrNull { it.skillId != null }?.skillId
+        val messages = entities.map {
             ChatMessage(
                 role = try { MessageRole.valueOf(it.role) } catch (_: Exception) { MessageRole.USER },
                 content = it.content,
                 timestamp = it.timestamp
             )
         }
+        return Pair(messages, skillId)
     }
 
     suspend fun deleteConversation(conversationId: String) {

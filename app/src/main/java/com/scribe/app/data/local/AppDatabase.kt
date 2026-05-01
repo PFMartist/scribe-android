@@ -2,6 +2,8 @@ package com.scribe.app.data.local
 
 import android.content.Context
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Entity(tableName = "messages")
 data class MessageEntity(
@@ -9,6 +11,7 @@ data class MessageEntity(
     @ColumnInfo(name = "conversation_id") val conversationId: String,
     @ColumnInfo(name = "role") val role: String,
     @ColumnInfo(name = "content") val content: String,
+    @ColumnInfo(name = "skill_id") val skillId: String? = null,
     @ColumnInfo(name = "timestamp") val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -30,7 +33,7 @@ interface MessageDao {
     suspend fun getFirstUserMessage(convId: String): String?
 }
 
-@Database(entities = [MessageEntity::class], version = 1, exportSchema = false)
+@Database(entities = [MessageEntity::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
 
@@ -38,13 +41,20 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN skill_id TEXT")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "scribe_history.db"
-                ).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2)
+                    .build().also { INSTANCE = it }
             }
         }
     }

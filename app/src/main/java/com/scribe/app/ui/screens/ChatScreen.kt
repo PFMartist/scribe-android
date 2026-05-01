@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.scribe.app.data.model.MessageRole
@@ -37,12 +38,15 @@ fun ChatScreen(
     onImportSkillZip: (Uri) -> Unit,
     onToggleReasoning: (String) -> Unit,
     onOpenSettings: () -> Unit,
+    onDeleteMessage: (String) -> Unit,
+    onRegenerateLastResponse: () -> Unit,
     skillMetas: List<SkillManager.SkillMeta>,
     modifier: Modifier = Modifier
 ) {
     var showHistoryDrawer by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
     var importText by remember { mutableStateOf("") }
+    var messageToDelete by remember { mutableStateOf<String?>(null) }
 
     val zipFilePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -55,9 +59,19 @@ fun ChatScreen(
 
     val listState = rememberLazyListState()
     val visibleMessages = uiState.messages.filter { it.role != MessageRole.SYSTEM }
+    val lastAssistant = visibleMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
+    val lastAssistantHasContent = lastAssistant?.content?.isNotBlank() == true
 
     LaunchedEffect(visibleMessages.size) {
         if (visibleMessages.isNotEmpty()) {
+            listState.animateScrollToItem(visibleMessages.size - 1)
+        }
+    }
+
+    val density = LocalDensity.current
+    val imeBottom = WindowInsets.ime.getBottom(density)
+    LaunchedEffect(imeBottom) {
+        if (imeBottom > 0 && visibleMessages.isNotEmpty()) {
             listState.animateScrollToItem(visibleMessages.size - 1)
         }
     }
@@ -104,6 +118,27 @@ fun ChatScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showImportDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    if (messageToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { messageToDelete = null },
+            title = { Text("删除消息") },
+            text = { Text("将同时删除该消息及其后续的 AI 回复，确定吗？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    messageToDelete?.let { onDeleteMessage(it) }
+                    messageToDelete = null
+                }) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { messageToDelete = null }) {
                     Text("取消")
                 }
             }
@@ -266,7 +301,17 @@ fun ChatScreen(
                                 content = msg.content,
                                 reasoning = msg.reasoning,
                                 reasoningExpanded = msg.id !in uiState.collapsedReasoningIds,
-                                onToggleReasoning = { onToggleReasoning(msg.id) }
+                                onToggleReasoning = { onToggleReasoning(msg.id) },
+                                onDelete = if (msg.role == MessageRole.USER) {
+                                    { messageToDelete = msg.id }
+                                } else null,
+                                onRegenerate = if (msg.role == MessageRole.ASSISTANT
+                                    && msg.id == lastAssistant?.id
+                                    && lastAssistantHasContent
+                                    && !uiState.isStreaming
+                                ) {
+                                    { onRegenerateLastResponse() }
+                                } else null
                             )
                         }
 

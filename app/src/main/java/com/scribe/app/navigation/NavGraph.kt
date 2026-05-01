@@ -37,6 +37,8 @@ fun AppNavGraph() {
                 onImportSkillZip = { chatViewModel.importSkillFromZip(it) },
                 onToggleReasoning = { chatViewModel.toggleReasoningCollapse(it) },
                 onOpenSettings = { navController.navigate(Screen.Settings.route) },
+                onDeleteMessage = { chatViewModel.deleteMessage(it) },
+                onRegenerateLastResponse = { chatViewModel.regenerateLastResponse() },
                 skillMetas = chatState.skillMetas
             )
         }

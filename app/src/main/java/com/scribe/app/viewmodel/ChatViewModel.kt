@@ -105,12 +105,26 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     fun loadConversation(convId: String) {
         streamingMessageId = null
         viewModelScope.launch {
-            val stored = chatRepo.loadMessages(convId)
-            val msgs = if (stored.isEmpty()) {
-                buildSystemMessage(currentSkill)
-            } else {
-                buildSystemMessage(currentSkill) + stored
+            val (stored, storedSkillId) = chatRepo.loadMessages(convId)
+
+            if (storedSkillId != currentSkill?.id) {
+                if (storedSkillId != null) {
+                    val skill = skillRepo.loadSkill(storedSkillId)
+                    if (skill != null) {
+                        currentSkill = skill
+                        _uiState.update { it.copy(skillName = skill.name) }
+                        settingsStore.setLastSkillId(storedSkillId)
+                    } else {
+                        currentSkill = null
+                        _uiState.update { it.copy(skillName = null) }
+                    }
+                } else {
+                    currentSkill = null
+                    _uiState.update { it.copy(skillName = null) }
+                }
             }
+
+            val msgs = buildSystemMessage(currentSkill) + stored
             _uiState.update {
                 it.copy(
                     messages = msgs,
@@ -153,6 +167,60 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
 
+        performChatStreaming(assistantId)
+    }
+
+    fun regenerateLastResponse() {
+        val state = _uiState.value
+        if (state.isStreaming) return
+
+        val lastAssistantIdx = state.messages.indexOfLast { it.role == MessageRole.ASSISTANT }
+        if (lastAssistantIdx < 0) return
+
+        val assistantId = state.messages[lastAssistantIdx].id
+        streamingMessageId = assistantId
+
+        _uiState.update { currentState ->
+            val msgs = currentState.messages.toMutableList()
+            msgs[lastAssistantIdx] = msgs[lastAssistantIdx].copy(content = "", reasoning = "")
+            currentState.copy(
+                messages = msgs,
+                isStreaming = true,
+                streamError = null,
+                tokenUsage = null
+            )
+        }
+
+        performChatStreaming(assistantId)
+    }
+
+    fun deleteMessage(messageId: String) {
+        if (_uiState.value.isStreaming) return
+
+        _uiState.update { currentState ->
+            val msgs = currentState.messages.toMutableList()
+            val idx = msgs.indexOfFirst { it.id == messageId }
+            if (idx < 0) return@update currentState
+            if (msgs[idx].role != MessageRole.USER) return@update currentState
+
+            msgs.removeAt(idx)
+            if (idx < msgs.size && msgs[idx].role == MessageRole.ASSISTANT) {
+                msgs.removeAt(idx)
+            }
+
+            currentState.copy(messages = msgs)
+        }
+
+        viewModelScope.launch {
+            val finalState = _uiState.value
+            val savableMessages = finalState.messages
+                .filter { it.role != MessageRole.SYSTEM && it.content.isNotBlank() }
+            chatRepo.saveMessages(finalState.conversationId, savableMessages, currentSkill?.id)
+            _uiState.update { it.copy(conversationIds = chatRepo.getAllConversationIds()) }
+        }
+    }
+
+    private fun performChatStreaming(assistantId: String) {
         viewModelScope.launch {
             val settings = currentSettings
 
@@ -244,7 +312,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 val finalState = _uiState.value
                 val savableMessages = finalState.messages
                     .filter { it.role != MessageRole.SYSTEM && it.content.isNotBlank() }
-                chatRepo.saveMessages(finalState.conversationId, savableMessages)
+                chatRepo.saveMessages(finalState.conversationId, savableMessages, currentSkill?.id)
                 _uiState.update { it.copy(conversationIds = chatRepo.getAllConversationIds()) }
             } else {
                 _uiState.update { currentState ->
