@@ -107,8 +107,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val (stored, storedSkillId) = chatRepo.loadMessages(convId)
 
-            if (storedSkillId != currentSkill?.id) {
-                if (storedSkillId != null) {
+            // storedSkillId == null: old record (pre-migration), keep current skill
+            // storedSkillId == "":   explicitly no skill, clear
+            // storedSkillId == "x":  load that skill
+            if (storedSkillId != null && storedSkillId != currentSkill?.id) {
+                if (storedSkillId.isNotEmpty()) {
                     val skill = skillRepo.loadSkill(storedSkillId)
                     if (skill != null) {
                         currentSkill = skill
@@ -119,6 +122,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         _uiState.update { it.copy(skillName = null) }
                     }
                 } else {
+                    // empty string = explicitly saved without skill
                     currentSkill = null
                     _uiState.update { it.copy(skillName = null) }
                 }
@@ -336,6 +340,32 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         loadSkillInternal(skillId)
         viewModelScope.launch { settingsStore.setLastSkillId(skillId) }
         newConversation()
+    }
+
+    fun bindSkillToConversation(skillId: String) {
+        if (skillId.isBlank()) {
+            currentSkill = null
+            _uiState.update { it.copy(skillName = null) }
+            viewModelScope.launch {
+                settingsStore.setLastSkillId("")
+                chatRepo.updateSkillId(_uiState.value.conversationId, "")
+            }
+        } else {
+            val skill = skillRepo.loadSkill(skillId)
+            if (skill != null) {
+                currentSkill = skill
+                _uiState.update { it.copy(skillName = skill.name) }
+                viewModelScope.launch {
+                    settingsStore.setLastSkillId(skillId)
+                    chatRepo.updateSkillId(_uiState.value.conversationId, skillId)
+                }
+            }
+        }
+
+        val state = _uiState.value
+        val stored = state.messages.filter { it.role != MessageRole.SYSTEM }
+        val msgs = buildSystemMessage(currentSkill) + stored
+        _uiState.update { it.copy(messages = msgs) }
     }
 
     fun deleteSkill(skillId: String) {

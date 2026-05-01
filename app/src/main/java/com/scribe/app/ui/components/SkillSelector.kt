@@ -18,10 +18,14 @@ fun SkillSelector(
     onSkillSelected: (String) -> Unit,
     onDeleteSkill: (String) -> Unit,
     onImportSkill: () -> Unit,
+    onSkillBoundToConversation: ((String) -> Unit)? = null,
+    hasMessages: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf<String?>(null) }
+    var pendingSkillId by remember { mutableStateOf<String?>(null) }
+    var showBindDialog by remember { mutableStateOf(false) }
 
     Box(modifier = modifier.padding(horizontal = 8.dp)) {
         OutlinedButton(
@@ -76,7 +80,12 @@ fun SkillSelector(
                     },
                     onClick = {
                         expanded = false
-                        onSkillSelected(skill.id)
+                        if (hasMessages && onSkillBoundToConversation != null) {
+                            pendingSkillId = skill.id
+                            showBindDialog = true
+                        } else {
+                            onSkillSelected(skill.id)
+                        }
                     }
                 )
             }
@@ -114,6 +123,36 @@ fun SkillSelector(
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = null }) {
                     Text("取消")
+                }
+            }
+        )
+    }
+
+    // bind-to-conversation dialog
+    if (showBindDialog && pendingSkillId != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showBindDialog = false
+                pendingSkillId = null
+            },
+            title = { Text("应用 Skill") },
+            text = { Text("将此 Skill 应用到当前对话，还是开始新对话？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingSkillId?.let { onSkillBoundToConversation?.invoke(it) }
+                    showBindDialog = false
+                    pendingSkillId = null
+                }) {
+                    Text("应用到当前对话")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    pendingSkillId?.let { onSkillSelected(it) }
+                    showBindDialog = false
+                    pendingSkillId = null
+                }) {
+                    Text("开始新对话")
                 }
             }
         )

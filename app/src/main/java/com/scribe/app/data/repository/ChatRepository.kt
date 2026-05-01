@@ -10,13 +10,14 @@ class ChatRepository(private val messageDao: MessageDao) {
 
     suspend fun saveMessages(conversationId: String, messages: List<ChatMessage>, skillId: String? = null) {
         messageDao.deleteConversation(conversationId)
+        val effectiveSkillId = skillId ?: ""
         for (msg in messages) {
             messageDao.insert(
                 MessageEntity(
                     conversationId = conversationId,
                     role = msg.role.name,
                     content = msg.content,
-                    skillId = skillId,
+                    skillId = effectiveSkillId,
                     timestamp = msg.timestamp
                 )
             )
@@ -34,6 +35,10 @@ class ChatRepository(private val messageDao: MessageDao) {
             )
         }
         return Pair(messages, skillId)
+    }
+
+    suspend fun updateSkillId(conversationId: String, skillId: String?) {
+        messageDao.updateSkillId(conversationId, skillId)
     }
 
     suspend fun deleteConversation(conversationId: String) {

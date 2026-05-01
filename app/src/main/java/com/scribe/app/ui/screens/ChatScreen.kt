@@ -40,6 +40,7 @@ fun ChatScreen(
     onOpenSettings: () -> Unit,
     onDeleteMessage: (String) -> Unit,
     onRegenerateLastResponse: () -> Unit,
+    onBindSkillToConversation: (String) -> Unit,
     skillMetas: List<SkillManager.SkillMeta>,
     modifier: Modifier = Modifier
 ) {
@@ -245,7 +246,9 @@ fun ChatScreen(
                         currentSkillName = uiState.skillName,
                         onSkillSelected = onSkillSelected,
                         onDeleteSkill = onDeleteSkill,
-                        onImportSkill = { showImportDialog = true }
+                        onImportSkill = { showImportDialog = true },
+                        onSkillBoundToConversation = onBindSkillToConversation,
+                        hasMessages = visibleMessages.isNotEmpty()
                     )
 
                     HorizontalDivider()

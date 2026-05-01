@@ -39,6 +39,7 @@ fun AppNavGraph() {
                 onOpenSettings = { navController.navigate(Screen.Settings.route) },
                 onDeleteMessage = { chatViewModel.deleteMessage(it) },
                 onRegenerateLastResponse = { chatViewModel.regenerateLastResponse() },
+                onBindSkillToConversation = { chatViewModel.bindSkillToConversation(it) },
                 skillMetas = chatState.skillMetas
             )
         }

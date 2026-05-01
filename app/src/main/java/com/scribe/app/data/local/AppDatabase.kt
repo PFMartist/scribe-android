@@ -31,6 +31,9 @@ interface MessageDao {
 
     @Query("SELECT content FROM messages WHERE conversation_id = :convId AND role = 'user' ORDER BY timestamp ASC LIMIT 1")
     suspend fun getFirstUserMessage(convId: String): String?
+
+    @Query("UPDATE messages SET skill_id = :skillId WHERE conversation_id = :convId")
+    suspend fun updateSkillId(convId: String, skillId: String?)
 }
 
 @Database(entities = [MessageEntity::class], version = 2, exportSchema = false)
