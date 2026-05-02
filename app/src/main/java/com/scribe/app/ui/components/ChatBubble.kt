@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import com.scribe.app.data.model.MessageRole
 
@@ -31,6 +32,7 @@ fun ChatBubble(
     onToggleReasoning: () -> Unit = {},
     onDelete: (() -> Unit)? = null,
     onRegenerate: (() -> Unit)? = null,
+    incomplete: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     if (role == MessageRole.SYSTEM) return
@@ -151,10 +153,21 @@ fun ChatBubble(
                     Text(
                         text = content,
                         style = MaterialTheme.typography.bodyMedium.copy(
-                            fontFamily = FontFamily.Default
+                            fontFamily = FontFamily.Default,
+                            fontStyle = if (incomplete && !isUser) FontStyle.Italic else FontStyle.Normal
                         ),
                         color = if (isUser) MaterialTheme.colorScheme.onPrimary
+                        else if (incomplete) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
                         else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                if (incomplete && !isUser) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "生成中断",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
                     )
                 }
             }

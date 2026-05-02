@@ -310,11 +310,12 @@ fun ChatScreen(
                                 } else null,
                                 onRegenerate = if (msg.role == MessageRole.ASSISTANT
                                     && msg.id == lastAssistant?.id
-                                    && lastAssistantHasContent
+                                    && (lastAssistantHasContent || msg.incomplete)
                                     && !uiState.isStreaming
                                 ) {
                                     { onRegenerateLastResponse() }
-                                } else null
+                                } else null,
+                                incomplete = msg.incomplete
                             )
                         }
 

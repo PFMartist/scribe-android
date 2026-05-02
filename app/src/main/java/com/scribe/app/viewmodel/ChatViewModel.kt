@@ -10,8 +10,10 @@ import com.scribe.app.data.repository.ChatRepository
 import com.scribe.app.data.repository.SkillManager
 import com.scribe.app.data.repository.SkillRepository
 import com.scribe.app.network.LLMService
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
@@ -43,6 +45,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private var currentSkill: Skill? = null
     private var settingsReady = false
     private var streamingMessageId: String? = null
+    private var streamingJob: Job? = null
 
     init {
         val storedVersion = settingsStore.getBundledSkillsVersion()
@@ -185,12 +188,20 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val lastAssistantIdx = state.messages.indexOfLast { it.role == MessageRole.ASSISTANT }
         if (lastAssistantIdx < 0) return
 
-        val assistantId = state.messages[lastAssistantIdx].id
+        val lastAssistant = state.messages[lastAssistantIdx]
+        // Use partial content as prefill when continuing an interrupted stream
+        val prefillContent = if (lastAssistant.incomplete) lastAssistant.content else ""
+
+        val assistantId = lastAssistant.id
         streamingMessageId = assistantId
 
         _uiState.update { currentState ->
             val msgs = currentState.messages.toMutableList()
-            msgs[lastAssistantIdx] = msgs[lastAssistantIdx].copy(content = "", reasoning = "")
+            msgs[lastAssistantIdx] = msgs[lastAssistantIdx].copy(
+                content = prefillContent,
+                reasoning = "",
+                incomplete = false
+            )
             currentState.copy(
                 messages = msgs,
                 isStreaming = true,
@@ -229,7 +240,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun performChatStreaming(assistantId: String) {
-        viewModelScope.launch {
+        streamingJob?.cancel()
+        streamingJob = viewModelScope.launch {
             val settings = currentSettings
 
             val baseUrl = when (_uiState.value.provider) {
@@ -255,7 +267,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 .filter { it.content.isNotBlank() || it.role == MessageRole.SYSTEM }
                 .map { mapOf("role" to it.role.name.lowercase(), "content" to it.content) }
 
-            var fullResponse = ""
+            // Start with prefill content when continuing an interrupted stream
+            val prefillStart = allMessages.find { it.id == assistantId }?.content ?: ""
+            var fullResponse = prefillStart
             var fullReasoning = ""
             var errorOccurred = false
 
@@ -408,6 +422,34 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val set = state.collapsedReasoningIds.toMutableSet()
             if (set.contains(messageId)) set.remove(messageId) else set.add(messageId)
             state.copy(collapsedReasoningIds = set)
+        }
+    }
+
+    fun handleBackground() {
+        val job = streamingJob ?: return
+        if (!job.isActive) return
+
+        val state = _uiState.value
+        val streamingId = streamingMessageId
+        val partial = state.messages
+            .filter { it.role != MessageRole.SYSTEM && it.content.isNotBlank() }
+            .map { msg ->
+                if (streamingId != null && msg.id == streamingId) msg.copy(incomplete = true)
+                else msg
+            }
+
+        runBlocking {
+            chatRepo.saveMessages(state.conversationId, partial, currentSkill?.id)
+        }
+
+        job.cancel()
+        _uiState.update { state ->
+            val msgs = state.messages.toMutableList()
+            val idx = msgs.indexOfLast { it.id == streamingId }
+            if (idx >= 0) {
+                msgs[idx] = msgs[idx].copy(incomplete = true)
+            }
+            state.copy(messages = msgs, isStreaming = false)
         }
     }
 

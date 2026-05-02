@@ -38,7 +38,8 @@ data class ChatMessage(
     val role: MessageRole,
     val content: String,
     val reasoning: String = "",
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val incomplete: Boolean = false
 )
 
 sealed class StreamEvent {

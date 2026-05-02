@@ -12,7 +12,8 @@ data class MessageEntity(
     @ColumnInfo(name = "role") val role: String,
     @ColumnInfo(name = "content") val content: String,
     @ColumnInfo(name = "skill_id") val skillId: String? = null,
-    @ColumnInfo(name = "timestamp") val timestamp: Long = System.currentTimeMillis()
+    @ColumnInfo(name = "timestamp") val timestamp: Long = System.currentTimeMillis(),
+    @ColumnInfo(name = "incomplete", defaultValue = "0") val incomplete: Boolean = false
 )
 
 @Dao
@@ -36,7 +37,7 @@ interface MessageDao {
     suspend fun updateSkillId(convId: String, skillId: String?)
 }
 
-@Database(entities = [MessageEntity::class], version = 2, exportSchema = false)
+@Database(entities = [MessageEntity::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
 
@@ -50,13 +51,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN incomplete INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "scribe_history.db"
-                ).addMigrations(MIGRATION_1_2)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build().also { INSTANCE = it }
             }
         }

@@ -1,6 +1,10 @@
 package com.scribe.app.navigation
 
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -20,8 +24,19 @@ fun AppNavGraph() {
     val navController = rememberNavController()
     val chatViewModel: ChatViewModel = viewModel()
     val settingsViewModel: SettingsViewModel = viewModel()
-    val chatState by chatViewModel.uiState.collectAsState()
-    val settingsState by settingsViewModel.uiState.collectAsState()
+    val chatState by chatViewModel.uiState.collectAsStateWithLifecycle()
+    val settingsState by settingsViewModel.uiState.collectAsStateWithLifecycle()
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                chatViewModel.handleBackground()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     NavHost(navController = navController, startDestination = Screen.Chat.route) {
         composable(Screen.Chat.route) {

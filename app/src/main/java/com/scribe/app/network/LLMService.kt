@@ -2,10 +2,9 @@ package com.scribe.app.network
 
 import com.scribe.app.data.model.Provider
 import com.scribe.app.data.model.StreamEvent
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.callbackFlow
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -30,7 +29,7 @@ object LLMService {
         apiKey: String,
         model: String,
         aiThinking: Boolean
-    ): Flow<StreamEvent> = flow {
+    ): Flow<StreamEvent> = callbackFlow {
 
         val endpoint = when (provider) {
             Provider.OPENAI -> "${baseUrl.trimEnd('/')}/v1/chat/completions"
@@ -55,53 +54,63 @@ object LLMService {
             }
         }
 
-        // Blocking network call — safe because flowOn(IO) runs this on IO dispatcher
         val call = client.newCall(requestBuilder.build())
-        val response = call.execute()
-
-        if (!response.isSuccessful) {
-            val errorBody = response.body?.string() ?: "HTTP ${response.code}"
-            val errorMsg = try {
-                JSONObject(errorBody).optJSONObject("error")?.optString("message", errorBody) ?: errorBody
-            } catch (_: Exception) { errorBody }
-            emit(StreamEvent.Error(errorMsg))
-            return@flow
-        }
-
-        val bodyStream = response.body?.byteStream()
-        if (bodyStream == null) {
-            emit(StreamEvent.Error("空响应体"))
-            return@flow
-        }
-
-        val reader = BufferedReader(InputStreamReader(bodyStream))
-        var currentEvent: String? = null
-
-        try {
-            var rawLine: String? = reader.readLine()
-            while (rawLine != null) {
-                val line = rawLine.trim()
-                if (line.startsWith("event: ")) {
-                    currentEvent = line.removePrefix("event: ").trim()
-                    rawLine = reader.readLine()
-                    continue
+        call.enqueue(object : Callback {
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                if (!response.isSuccessful) {
+                    val errorBody = try { response.body?.string() ?: "HTTP ${response.code}" } catch (_: Exception) { "HTTP ${response.code}" }
+                    val errorMsg = try {
+                        JSONObject(errorBody).optJSONObject("error")?.optString("message", errorBody) ?: errorBody
+                    } catch (_: Exception) { errorBody }
+                    trySend(StreamEvent.Error(errorMsg))
+                    close()
+                    return
                 }
 
-                val event = SseParser.parseLine(line, currentEvent, provider)
-                currentEvent = null
-
-                if (event != null) {
-                    emit(event)
+                val bodyStream = try { response.body?.byteStream() } catch (_: Exception) { null }
+                if (bodyStream == null) {
+                    trySend(StreamEvent.Error("空响应体"))
+                    close()
+                    return
                 }
-                rawLine = reader.readLine()
+
+                val reader = BufferedReader(InputStreamReader(bodyStream))
+                var currentEvent: String? = null
+
+                try {
+                    var rawLine: String? = reader.readLine()
+                    while (rawLine != null) {
+                        val line = rawLine.trim()
+                        if (line.startsWith("event: ")) {
+                            currentEvent = line.removePrefix("event: ").trim()
+                            rawLine = reader.readLine()
+                            continue
+                        }
+
+                        val event = SseParser.parseLine(line, currentEvent, provider)
+                        currentEvent = null
+
+                        if (event != null) {
+                            trySend(event)
+                        }
+                        rawLine = reader.readLine()
+                    }
+                } catch (e: Exception) {
+                    trySend(StreamEvent.Error("流读取错误: ${e.message}"))
+                } finally {
+                    try { reader.close() } catch (_: Exception) {}
+                    try { response.close() } catch (_: Exception) {}
+                    close()
+                }
             }
-        } catch (e: Exception) {
-            emit(StreamEvent.Error("流读取错误: ${e.message}"))
-        } finally {
-            reader.close()
-            response.close()
-        }
-    }.flowOn(Dispatchers.IO)
+
+            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                close(e)
+            }
+        })
+
+        awaitClose { call.cancel() }
+    }
 
     private fun buildOpenAIBody(
         messages: List<Map<String, String>>,

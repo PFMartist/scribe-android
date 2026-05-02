@@ -18,7 +18,8 @@ class ChatRepository(private val messageDao: MessageDao) {
                     role = msg.role.name,
                     content = msg.content,
                     skillId = effectiveSkillId,
-                    timestamp = msg.timestamp
+                    timestamp = msg.timestamp,
+                    incomplete = msg.incomplete
                 )
             )
         }
@@ -31,7 +32,8 @@ class ChatRepository(private val messageDao: MessageDao) {
             ChatMessage(
                 role = try { MessageRole.valueOf(it.role) } catch (_: Exception) { MessageRole.USER },
                 content = it.content,
-                timestamp = it.timestamp
+                timestamp = it.timestamp,
+                incomplete = it.incomplete
             )
         }
         return Pair(messages, skillId)
