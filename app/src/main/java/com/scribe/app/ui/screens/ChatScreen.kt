@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -64,32 +65,27 @@ fun ChatScreen(
     val lastAssistant = visibleMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
     val lastAssistantHasContent = lastAssistant?.content?.isNotBlank() == true
 
-    // Auto-scroll only when the last item is fully visible (user hasn't scrolled up)
-    val autoScrollEnabled by remember {
-        derivedStateOf {
-            val info = listState.layoutInfo
-            if (info.totalItemsCount == 0) true
-            else {
-                val lastVisible = info.visibleItemsInfo.lastOrNull()
-                lastVisible != null && lastVisible.index >= info.totalItemsCount - 1
-            }
-        }
+    // Auto-scroll only when user is at the absolute bottom (canScrollForward == false)
+    val isAtBottom by remember {
+        derivedStateOf { !listState.canScrollForward }
     }
 
-    // Auto-scroll on new messages, only if user is at bottom
+    // Auto-scroll on new messages
     LaunchedEffect(visibleMessages.size) {
-        if (visibleMessages.isNotEmpty() && autoScrollEnabled) {
-            listState.animateScrollToItem(visibleMessages.size - 1)
+        if (visibleMessages.isNotEmpty() && isAtBottom) {
+            listState.animateScrollToEnd()
         }
     }
 
-    // Auto-scroll during streaming when assistant content updates
+    // Auto-scroll during streaming: watch both content and reasoning
     val streamingContent = if (uiState.isStreaming) {
-        visibleMessages.lastOrNull { it.role == MessageRole.ASSISTANT }?.content.orEmpty()
+        visibleMessages.lastOrNull { it.role == MessageRole.ASSISTANT }?.let {
+            it.content + it.reasoning
+        }.orEmpty()
     } else ""
     LaunchedEffect(streamingContent) {
-        if (uiState.isStreaming && autoScrollEnabled && visibleMessages.isNotEmpty()) {
-            listState.animateScrollToItem(visibleMessages.size - 1)
+        if (uiState.isStreaming && isAtBottom && visibleMessages.isNotEmpty()) {
+            listState.animateScrollToEnd()
         }
     }
 
@@ -99,7 +95,7 @@ fun ChatScreen(
     LaunchedEffect(imeBottom) {
         if (imeBottom > 0 && visibleMessages.isNotEmpty()) {
             delay(50)
-            listState.animateScrollToItem(visibleMessages.size - 1)
+            listState.animateScrollToEnd()
         }
     }
 
@@ -362,6 +358,22 @@ fun ChatScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+private suspend fun LazyListState.animateScrollToEnd() {
+    val total = layoutInfo.totalItemsCount
+    if (total == 0) return
+    animateScrollToItem(total - 1)
+    // When the last item is taller than the viewport, animateScrollToItem
+    // only aligns its top edge. Push further to show the bottom.
+    val info = layoutInfo
+    val lastItem = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
+    if (lastItem != null) {
+        val overflow = lastItem.offset + lastItem.size - info.viewportSize.height
+        if (overflow > 0) {
+            scrollToItem(total - 1, overflow)
         }
     }
 }
