@@ -365,15 +365,17 @@ fun ChatScreen(
 private suspend fun LazyListState.animateScrollToEnd() {
     val total = layoutInfo.totalItemsCount
     if (total == 0) return
+    // First pass: animate to make the last item visible
     animateScrollToItem(total - 1)
-    // When the last item is taller than the viewport, animateScrollToItem
-    // only aligns its top edge. Push further to show the bottom.
+    // When the last item is taller than the viewport, push further
+    // to align its bottom edge. Use animateScrollToItem again (not scrollToItem)
+    // so the overflow portion is also animated, not a sudden jump.
     val info = layoutInfo
     val lastItem = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
     if (lastItem != null) {
         val overflow = lastItem.offset + lastItem.size - info.viewportSize.height
         if (overflow > 0) {
-            scrollToItem(total - 1, overflow)
+            animateScrollToItem(total - 1, overflow)
         }
     }
 }
