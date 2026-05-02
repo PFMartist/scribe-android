@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.scribe.app.data.model.MessageRole
+import kotlinx.coroutines.delay
 import com.scribe.app.data.repository.SkillManager
 import com.scribe.app.ui.components.ChatBubble
 import com.scribe.app.ui.components.MessageInput
@@ -63,16 +64,41 @@ fun ChatScreen(
     val lastAssistant = visibleMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
     val lastAssistantHasContent = lastAssistant?.content?.isNotBlank() == true
 
+    // Auto-scroll only when the last item is fully visible (user hasn't scrolled up)
+    val autoScrollEnabled by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            if (info.totalItemsCount == 0) true
+            else {
+                val lastVisible = info.visibleItemsInfo.lastOrNull()
+                lastVisible != null && lastVisible.index >= info.totalItemsCount - 1
+            }
+        }
+    }
+
+    // Auto-scroll on new messages, only if user is at bottom
     LaunchedEffect(visibleMessages.size) {
-        if (visibleMessages.isNotEmpty()) {
+        if (visibleMessages.isNotEmpty() && autoScrollEnabled) {
             listState.animateScrollToItem(visibleMessages.size - 1)
         }
     }
 
+    // Auto-scroll during streaming when assistant content updates
+    val streamingContent = if (uiState.isStreaming) {
+        visibleMessages.lastOrNull { it.role == MessageRole.ASSISTANT }?.content.orEmpty()
+    } else ""
+    LaunchedEffect(streamingContent) {
+        if (uiState.isStreaming && autoScrollEnabled && visibleMessages.isNotEmpty()) {
+            listState.animateScrollToItem(visibleMessages.size - 1)
+        }
+    }
+
+    // Auto-scroll when keyboard opens — delayed to let IME animation settle
     val density = LocalDensity.current
     val imeBottom = WindowInsets.ime.getBottom(density)
     LaunchedEffect(imeBottom) {
         if (imeBottom > 0 && visibleMessages.isNotEmpty()) {
+            delay(50)
             listState.animateScrollToItem(visibleMessages.size - 1)
         }
     }
