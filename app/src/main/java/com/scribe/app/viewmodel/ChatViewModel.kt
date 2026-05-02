@@ -45,7 +45,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private var streamingMessageId: String? = null
 
     init {
-        skillRepo.init()
+        val storedVersion = settingsStore.getBundledSkillsVersion()
+        val newVersion = skillRepo.init(storedVersion)
+        if (newVersion != storedVersion) {
+            settingsStore.setBundledSkillsVersion(newVersion)
+        }
 
         viewModelScope.launch {
             settingsStore.settings.collect { settings ->

@@ -8,7 +8,7 @@ class SkillRepository(context: Context) {
 
     val manager = SkillManager(context)
 
-    fun init() { manager.ensureBuiltInSkills() }
+    fun init(storedVersion: Int): Int = manager.ensureBuiltInSkills(storedVersion)
 
     fun getSkillIds(): List<String> = manager.getSkillIds()
 

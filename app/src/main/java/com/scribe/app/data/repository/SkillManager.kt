@@ -10,6 +10,10 @@ import java.util.zip.ZipInputStream
 
 class SkillManager(private val context: Context) {
 
+    companion object {
+        const val BUNDLED_SKILLS_VERSION = 1
+    }
+
     data class SkillMeta(
         val id: String,
         val name: String,
@@ -20,37 +24,66 @@ class SkillManager(private val context: Context) {
         get() = File(context.filesDir, "skills").also { it.mkdirs() }
 
     /**
-     * Copy built-in skills from assets to internal storage on first launch.
-     * Safe to call multiple times — existing skills won't be overwritten.
+     * Copy built-in skills from assets to internal storage.
+     * @param storedVersion previously persisted bundled skills version (0 if never installed)
+     * @return new version to persist if skills were updated, or storedVersion if unchanged
      */
-    fun ensureBuiltInSkills() {
+    fun ensureBuiltInSkills(storedVersion: Int): Int {
         val assetsSkills = try {
             context.assets.list("skills") ?: emptyArray()
         } catch (_: Exception) { emptyArray() }
 
-        for (skillId in assetsSkills) {
-            val destDir = File(skillsDir, skillId)
-            if (destDir.exists()) continue // already copied
+        if (assetsSkills.isEmpty()) return storedVersion
 
+        // Clean up stale temp dirs from any prior interrupted overwrite
+        skillsDir.listFiles()?.filter { it.name.endsWith(".tmp") }?.forEach { it.deleteRecursively() }
+
+        if (storedVersion >= BUNDLED_SKILLS_VERSION) {
+            // Version current — only fill missing or broken skill dirs
+            for (skillId in assetsSkills) {
+                try {
+                    val destDir = File(skillsDir, skillId)
+                    if (File(destDir, "SKILL.md").exists()) continue
+                    if (destDir.exists()) destDir.deleteRecursively()
+                    copySkillFromAssets(skillId, destDir)
+                } catch (_: Exception) {} // one broken asset shouldn't crash the app
+            }
+        } else {
+            // Bundled skills updated — overwrite each via temp dir for atomicity
+            for (skillId in assetsSkills) {
+                val destDir = File(skillsDir, skillId)
+                val tmpDir = File(skillsDir, "$skillId.tmp")
+                try {
+                    if (tmpDir.exists()) tmpDir.deleteRecursively()
+                    copySkillFromAssets(skillId, tmpDir)
+                    if (destDir.exists()) destDir.deleteRecursively()
+                    if (!tmpDir.renameTo(destDir)) {
+                        tmpDir.deleteRecursively()
+                    }
+                } catch (_: Exception) {
+                    tmpDir.deleteRecursively()
+                }
+            }
+        }
+
+        return BUNDLED_SKILLS_VERSION
+    }
+
+    private fun copySkillFromAssets(skillId: String, destDir: File) {
+        destDir.mkdirs()
+        val skillContent = context.assets.open("skills/$skillId/SKILL.md")
+            .bufferedReader().use { it.readText() }
+        File(destDir, "SKILL.md").writeText(skillContent)
+
+        for (appendixDir in listOf("references", "appendices")) {
             try {
-                destDir.mkdirs()
-                // copy SKILL.md
-                val skillContent = context.assets.open("skills/$skillId/SKILL.md")
-                    .bufferedReader().use { it.readText() }
-                File(destDir, "SKILL.md").writeText(skillContent)
-
-                // copy appendix dirs
-                for (appendixDir in listOf("references", "appendices")) {
-                    try {
-                        val files = context.assets.list("skills/$skillId/$appendixDir") ?: continue
-                        val appendixDest = File(destDir, appendixDir)
-                        appendixDest.mkdirs()
-                        for (file in files) {
-                            val content = context.assets.open("skills/$skillId/$appendixDir/$file")
-                                .bufferedReader().use { it.readText() }
-                            File(appendixDest, file).writeText(content)
-                        }
-                    } catch (_: Exception) {}
+                val files = context.assets.list("skills/$skillId/$appendixDir") ?: continue
+                val appendixDest = File(destDir, appendixDir)
+                appendixDest.mkdirs()
+                for (file in files) {
+                    val content = context.assets.open("skills/$skillId/$appendixDir/$file")
+                        .bufferedReader().use { it.readText() }
+                    File(appendixDest, file).writeText(content)
                 }
             } catch (_: Exception) {}
         }

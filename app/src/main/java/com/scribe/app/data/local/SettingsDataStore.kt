@@ -28,7 +28,8 @@ class SettingsDataStore(context: Context) {
         val anthropicModel: String = DEFAULT_ANTHROPIC_MODEL,
         val showReasoning: Boolean = true,
         val aiThinking: Boolean = true,
-        val lastSkillId: String = ""
+        val lastSkillId: String = "",
+        val bundledSkillsVersion: Int = 0
     )
 
     private val prefs: SharedPreferences by lazy {
@@ -59,7 +60,8 @@ class SettingsDataStore(context: Context) {
             anthropicModel = getString("anthropic_model", DEFAULT_ANTHROPIC_MODEL) ?: DEFAULT_ANTHROPIC_MODEL,
             showReasoning = getBoolean("show_reasoning", true),
             aiThinking = getBoolean("ai_thinking", true),
-            lastSkillId = getString("last_skill_id", "") ?: ""
+            lastSkillId = getString("last_skill_id", "") ?: "",
+            bundledSkillsVersion = getInt("bundled_skills_version", 0)
         )
     }
 
@@ -98,5 +100,11 @@ class SettingsDataStore(context: Context) {
 
     fun setLastSkillId(id: String) {
         saveAndNotify { putString("last_skill_id", id) }
+    }
+
+    fun getBundledSkillsVersion(): Int = prefs.getInt("bundled_skills_version", 0)
+
+    fun setBundledSkillsVersion(version: Int) {
+        saveAndNotify { putInt("bundled_skills_version", version) }
     }
 }
