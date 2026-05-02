@@ -119,11 +119,12 @@ fun ChatScreen(
         }
     }
 
-    // Instant scroll when loading history (no animation)
+    // Instant scroll when loading history (no animation).
+    // Uses a two-pass approach because LazyColumn hasn't measured new items yet.
     LaunchedEffect(uiState.scrollToBottomTrigger) {
         if (uiState.scrollToBottomTrigger > 0L) {
             programmaticScroll = true
-            listState.scrollToEnd()
+            listState.scrollToEndHistory()
             programmaticScroll = false
         }
     }
@@ -435,4 +436,32 @@ private suspend fun LazyListState.scrollToEnd() {
     val total = layoutInfo.totalItemsCount
     if (total == 0) return
     scrollToItem(total - 1, SCROLL_END_OFFSET)
+}
+
+// Two-pass scroll for loading history: the new items haven't been measured yet,
+// so a single-pass large offset can clamp to a wrong estimated position.
+// Pass 1 forces LazyColumn to compose & measure the last item.
+// Pass 2 reads the now-accurate layout and scrolls its bottom edge into view.
+// Pass 3 (safety net) catches any remaining estimate errors.
+private suspend fun LazyListState.scrollToEndHistory() {
+    val total = layoutInfo.totalItemsCount
+    if (total == 0) return
+
+    // Pass 1: scroll the last item into view so it gets measured
+    scrollToItem(total - 1)
+
+    // Pass 2: now the last item has a real size — scroll to its bottom
+    val info = layoutInfo
+    val lastItem = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
+    if (lastItem != null) {
+        val overflow = lastItem.offset + lastItem.size - info.viewportSize.height
+        if (overflow > 0) {
+            scrollToItem(total - 1, overflow)
+        }
+    }
+
+    // Pass 3 (safety net): if estimates were still off, finish with a large offset
+    if (canScrollForward) {
+        scrollToItem(total - 1, SCROLL_END_OFFSET)
+    }
 }
