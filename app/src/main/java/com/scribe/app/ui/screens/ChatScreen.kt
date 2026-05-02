@@ -19,7 +19,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.scribe.app.data.model.MessageRole
-import androidx.compose.foundation.gestures.scrollBy
 import kotlinx.coroutines.delay
 import com.scribe.app.data.repository.SkillManager
 import com.scribe.app.ui.components.ChatBubble
@@ -131,7 +130,7 @@ fun ChatScreen(
 
     // Auto-scroll during streaming: watch both content and reasoning.
     // Use userScrolledUp (not isAtBottom) so rapid output doesn't race with canScrollForward.
-    // Use scrollBy (single-pass, instant) instead of animateScrollToItem to avoid
+    // Uses scrollToEnd (single-pass scrollToItem with large offset) to avoid
     // getting stuck when two-pass scrolling is cancelled between passes.
     val streamingContent = if (uiState.isStreaming) {
         visibleMessages.lastOrNull { it.role == MessageRole.ASSISTANT }?.let {
@@ -141,9 +140,7 @@ fun ChatScreen(
     LaunchedEffect(streamingContent) {
         if (uiState.isStreaming && !userScrolledUp && visibleMessages.isNotEmpty()) {
             programmaticScroll = true
-            listState.scroll {
-                scrollBy(Float.MAX_VALUE)
-            }
+            listState.scrollToEnd()
             programmaticScroll = false
         }
     }
@@ -423,33 +420,19 @@ fun ChatScreen(
     }
 }
 
+// Single-pass scroll with a very large offset that is clamped by the scroll range.
+// The offset (1e9 px) is way beyond any realistic content but won't overflow Int
+// when added to item positions. Avoids the two-pass race during streaming.
+private const val SCROLL_END_OFFSET = 1_000_000_000
+
 private suspend fun LazyListState.animateScrollToEnd() {
     val total = layoutInfo.totalItemsCount
     if (total == 0) return
-    animateScrollToItem(total - 1)
-    // When the last item is taller than the viewport, push further
-    // to align its bottom edge. Use animateScrollToItem again (not scrollToItem)
-    // so the overflow portion is also animated, not a sudden jump.
-    val info = layoutInfo
-    val lastItem = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
-    if (lastItem != null) {
-        val overflow = lastItem.offset + lastItem.size - info.viewportSize.height
-        if (overflow > 0) {
-            animateScrollToItem(total - 1, overflow)
-        }
-    }
+    animateScrollToItem(total - 1, SCROLL_END_OFFSET)
 }
 
 private suspend fun LazyListState.scrollToEnd() {
     val total = layoutInfo.totalItemsCount
     if (total == 0) return
-    scrollToItem(total - 1)
-    val info = layoutInfo
-    val lastItem = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
-    if (lastItem != null) {
-        val overflow = lastItem.offset + lastItem.size - info.viewportSize.height
-        if (overflow > 0) {
-            scrollToItem(total - 1, overflow)
-        }
-    }
+    scrollToItem(total - 1, SCROLL_END_OFFSET)
 }
