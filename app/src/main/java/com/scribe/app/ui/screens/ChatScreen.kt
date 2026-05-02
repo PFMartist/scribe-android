@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.scribe.app.data.model.MessageRole
+import androidx.compose.foundation.gestures.scrollBy
 import kotlinx.coroutines.delay
 import com.scribe.app.data.repository.SkillManager
 import com.scribe.app.ui.components.ChatBubble
@@ -70,22 +71,80 @@ fun ChatScreen(
         derivedStateOf { !listState.canScrollForward }
     }
 
-    // Auto-scroll on new messages
-    LaunchedEffect(visibleMessages.size) {
-        if (visibleMessages.isNotEmpty() && isAtBottom) {
-            listState.animateScrollToEnd()
+    // userScrolledUp: user manually scrolled away from bottom to read earlier messages
+    var userScrolledUp by remember { mutableStateOf(false) }
+    // programmaticScroll: guard so snapshotFlow ignores scroll position changes
+    // caused by our own animateScrollToEnd / scrollToEnd / scrollBy calls
+    var programmaticScroll by remember { mutableStateOf(false) }
+
+    // Reset userScrolledUp when streaming ends or conversation changes
+    LaunchedEffect(uiState.isStreaming, uiState.conversationId) {
+        if (!uiState.isStreaming) {
+            userScrolledUp = false
         }
     }
 
-    // Auto-scroll during streaming: watch both content and reasoning
+    // Detect user scrolling up by tracking scroll position (index + offset).
+    // Unlike canScrollForward, these don't change when item content grows —
+    // they only change on actual scroll, so no false positives from fast output.
+    var prevIndex by remember { mutableIntStateOf(0) }
+    var prevOffset by remember { mutableIntStateOf(0) }
+    LaunchedEffect(listState) {
+        var first = true
+        snapshotFlow {
+            listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+        }.collect { (index, offset) ->
+            if (first) { first = false; prevIndex = index; prevOffset = offset; return@collect }
+            if (!programmaticScroll) {
+                val scrolledUp = index < prevIndex ||
+                    (index == prevIndex && offset < prevOffset)
+                if (scrolledUp && !userScrolledUp) {
+                    userScrolledUp = true
+                }
+                // Re-engage when user scrolls back to the absolute bottom
+                if (!scrolledUp && userScrolledUp && !listState.canScrollForward) {
+                    userScrolledUp = false
+                }
+            }
+            prevIndex = index
+            prevOffset = offset
+        }
+    }
+
+    // Auto-scroll on new messages
+    LaunchedEffect(visibleMessages.size) {
+        if (visibleMessages.isNotEmpty() && isAtBottom) {
+            programmaticScroll = true
+            listState.animateScrollToEnd()
+            programmaticScroll = false
+        }
+    }
+
+    // Instant scroll when loading history (no animation)
+    LaunchedEffect(uiState.scrollToBottomTrigger) {
+        if (uiState.scrollToBottomTrigger > 0L) {
+            programmaticScroll = true
+            listState.scrollToEnd()
+            programmaticScroll = false
+        }
+    }
+
+    // Auto-scroll during streaming: watch both content and reasoning.
+    // Use userScrolledUp (not isAtBottom) so rapid output doesn't race with canScrollForward.
+    // Use scrollBy (single-pass, instant) instead of animateScrollToItem to avoid
+    // getting stuck when two-pass scrolling is cancelled between passes.
     val streamingContent = if (uiState.isStreaming) {
         visibleMessages.lastOrNull { it.role == MessageRole.ASSISTANT }?.let {
             it.content + it.reasoning
         }.orEmpty()
     } else ""
     LaunchedEffect(streamingContent) {
-        if (uiState.isStreaming && isAtBottom && visibleMessages.isNotEmpty()) {
-            listState.animateScrollToEnd()
+        if (uiState.isStreaming && !userScrolledUp && visibleMessages.isNotEmpty()) {
+            programmaticScroll = true
+            listState.scroll {
+                scrollBy(Float.MAX_VALUE)
+            }
+            programmaticScroll = false
         }
     }
 
@@ -95,7 +154,9 @@ fun ChatScreen(
     LaunchedEffect(imeBottom) {
         if (imeBottom > 0 && visibleMessages.isNotEmpty()) {
             delay(50)
+            programmaticScroll = true
             listState.animateScrollToEnd()
+            programmaticScroll = false
         }
     }
 
@@ -365,7 +426,6 @@ fun ChatScreen(
 private suspend fun LazyListState.animateScrollToEnd() {
     val total = layoutInfo.totalItemsCount
     if (total == 0) return
-    // First pass: animate to make the last item visible
     animateScrollToItem(total - 1)
     // When the last item is taller than the viewport, push further
     // to align its bottom edge. Use animateScrollToItem again (not scrollToItem)
@@ -376,6 +436,20 @@ private suspend fun LazyListState.animateScrollToEnd() {
         val overflow = lastItem.offset + lastItem.size - info.viewportSize.height
         if (overflow > 0) {
             animateScrollToItem(total - 1, overflow)
+        }
+    }
+}
+
+private suspend fun LazyListState.scrollToEnd() {
+    val total = layoutInfo.totalItemsCount
+    if (total == 0) return
+    scrollToItem(total - 1)
+    val info = layoutInfo
+    val lastItem = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
+    if (lastItem != null) {
+        val overflow = lastItem.offset + lastItem.size - info.viewportSize.height
+        if (overflow > 0) {
+            scrollToItem(total - 1, overflow)
         }
     }
 }

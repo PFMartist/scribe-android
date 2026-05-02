@@ -28,7 +28,8 @@ data class ChatUiState(
     val model: String = "",
     val showReasoning: Boolean = true,
     val aiThinking: Boolean = true,
-    val collapsedReasoningIds: Set<String> = emptySet()
+    val collapsedReasoningIds: Set<String> = emptySet(),
+    val scrollToBottomTrigger: Long = 0L
 )
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
@@ -142,7 +143,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     conversationId = convId,
                     isStreaming = false,
                     streamError = null,
-                    tokenUsage = null
+                    tokenUsage = null,
+                    scrollToBottomTrigger = it.scrollToBottomTrigger + 1
                 )
             }
         }
