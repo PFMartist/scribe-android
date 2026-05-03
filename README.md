@@ -19,7 +19,7 @@ Kotlin + Jetpack Compose 构建的 AI 对话客户端，支持 OpenAI 兼容 / A
 
 ## 构建
 
-依赖：JDK 21 + Android SDK 35。
+依赖：JDK 21+ + Android SDK 35。
 
 ```bash
 export ANDROID_HOME=$HOME/Android
@@ -28,6 +28,19 @@ export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 ```
 
 或用 Android Studio 打开项目目录。
+
+**已测试环境：**
+
+| 环境 | 详情 |
+|------|------|
+| OS | Ubuntu 24.04.4 LTS (x86_64) |
+| JDK | OpenJDK 25.0.2 |
+| Gradle | 8.7 |
+| Kotlin | 2.0.0 |
+| Android Gradle Plugin | 8.5.0 |
+| compileSdk / targetSdk | 35 |
+| minSdk | 26 (Android 8.0) |
+| Compose BOM | 2024.06.00 |
 
 ## 协议
 
