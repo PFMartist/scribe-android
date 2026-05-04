@@ -5,6 +5,13 @@ import androidx.room.*
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
+@Entity(tableName = "conversations")
+data class ConversationEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "title") val title: String? = null,
+    @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "messages")
 data class MessageEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -15,6 +22,24 @@ data class MessageEntity(
     @ColumnInfo(name = "timestamp") val timestamp: Long = System.currentTimeMillis(),
     @ColumnInfo(name = "incomplete", defaultValue = "0") val incomplete: Boolean = false
 )
+
+@Dao
+interface ConversationDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(conversation: ConversationEntity)
+
+    @Query("UPDATE conversations SET title = :title WHERE id = :convId")
+    suspend fun updateTitle(convId: String, title: String)
+
+    @Query("SELECT title FROM conversations WHERE id = :convId")
+    suspend fun getTitle(convId: String): String?
+
+    @Query("SELECT * FROM conversations")
+    suspend fun getAllTitles(): List<ConversationEntity>
+
+    @Query("DELETE FROM conversations WHERE id = :convId")
+    suspend fun delete(convId: String)
+}
 
 @Dao
 interface MessageDao {
@@ -37,13 +62,20 @@ interface MessageDao {
     suspend fun updateSkillId(convId: String, skillId: String?)
 }
 
-@Database(entities = [MessageEntity::class], version = 3, exportSchema = false)
+@Database(entities = [ConversationEntity::class, MessageEntity::class], version = 4, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
+    abstract fun conversationDao(): ConversationDao
 
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
+
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS conversations (id TEXT NOT NULL PRIMARY KEY, title TEXT, created_at INTEGER NOT NULL DEFAULT 0)")
+            }
+        }
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -63,7 +95,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "scribe_history.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build().also { INSTANCE = it }
             }
         }

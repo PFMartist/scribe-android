@@ -1,12 +1,17 @@
 package com.scribe.app.data.repository
 
+import com.scribe.app.data.local.ConversationDao
+import com.scribe.app.data.local.ConversationEntity
 import com.scribe.app.data.local.MessageDao
 import com.scribe.app.data.local.MessageEntity
 import com.scribe.app.data.model.ChatMessage
 import com.scribe.app.data.model.MessageRole
 import java.util.UUID
 
-class ChatRepository(private val messageDao: MessageDao) {
+class ChatRepository(
+    private val messageDao: MessageDao,
+    private val conversationDao: ConversationDao
+) {
 
     suspend fun saveMessages(conversationId: String, messages: List<ChatMessage>, skillId: String? = null) {
         messageDao.deleteConversation(conversationId)
@@ -45,15 +50,25 @@ class ChatRepository(private val messageDao: MessageDao) {
 
     suspend fun deleteConversation(conversationId: String) {
         messageDao.deleteConversation(conversationId)
+        conversationDao.delete(conversationId)
     }
 
     suspend fun getAllConversationIds(): List<String> {
         return messageDao.getAllConversationIds()
     }
 
-    suspend fun getConversationTitle(conversationId: String): String {
-        val first = messageDao.getFirstUserMessage(conversationId)
-        return first?.take(30)?.replace("\n", " ") ?: "新对话"
+    suspend fun getConversationTitle(conversationId: String): String? {
+        return conversationDao.getTitle(conversationId)
+    }
+
+    suspend fun updateConversationTitle(conversationId: String, title: String) {
+        conversationDao.insert(ConversationEntity(id = conversationId, title = title))
+    }
+
+    suspend fun getAllConversationTitles(): Map<String, String> {
+        return conversationDao.getAllTitles()
+            .filter { it.title != null }
+            .associate { it.id to it.title!! }
     }
 
     fun newConversationId(): String = UUID.randomUUID().toString()

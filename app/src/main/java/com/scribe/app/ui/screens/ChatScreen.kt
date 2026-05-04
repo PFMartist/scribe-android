@@ -3,6 +3,8 @@ package com.scribe.app.ui.screens
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,7 +28,7 @@ import com.scribe.app.ui.components.MessageInput
 import com.scribe.app.ui.components.SkillSelector
 import com.scribe.app.viewmodel.ChatUiState
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
     uiState: ChatUiState,
@@ -34,6 +36,8 @@ fun ChatScreen(
     onNewConversation: () -> Unit,
     onLoadConversation: (String) -> Unit,
     onDeleteConversation: (String) -> Unit,
+    onRenameConversation: (String, String) -> Unit,
+    onAiSummarizeTitle: (String) -> Unit,
     onSkillSelected: (String) -> Unit,
     onDeleteSkill: (String) -> Unit,
     onImportSkill: (String) -> Unit,
@@ -50,6 +54,10 @@ fun ChatScreen(
     var showImportDialog by remember { mutableStateOf(false) }
     var importText by remember { mutableStateOf("") }
     var messageToDelete by remember { mutableStateOf<String?>(null) }
+    var inputText by remember { mutableStateOf("") }
+    var renameConvId by remember { mutableStateOf<String?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    var drawerMenuConvId by remember { mutableStateOf<String?>(null) }
 
     val zipFilePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -209,18 +217,54 @@ fun ChatScreen(
     if (messageToDelete != null) {
         AlertDialog(
             onDismissRequest = { messageToDelete = null },
-            title = { Text("删除消息") },
-            text = { Text("将同时删除该消息及其后续的 AI 回复，确定吗？") },
+            title = { Text("撤回消息") },
+            text = { Text("消息文本将退回输入框，同时删除后续 AI 回复。确认撤回吗？") },
             confirmButton = {
                 TextButton(onClick = {
-                    messageToDelete?.let { onDeleteMessage(it) }
+                    messageToDelete?.let { msgId ->
+                        visibleMessages.find { it.id == msgId }?.let { msg ->
+                            inputText = msg.content
+                        }
+                        onDeleteMessage(msgId)
+                    }
                     messageToDelete = null
                 }) {
-                    Text("删除", color = MaterialTheme.colorScheme.error)
+                    Text("撤回", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { messageToDelete = null }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    if (renameConvId != null) {
+        AlertDialog(
+            onDismissRequest = { renameConvId = null },
+            title = { Text("重命名对话") },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    placeholder = { Text("输入标题...") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    renameConvId?.let { convId ->
+                        onRenameConversation(convId, renameText.trim())
+                    }
+                    renameConvId = null
+                }) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameConvId = null }) {
                     Text("取消")
                 }
             }
@@ -254,22 +298,53 @@ fun ChatScreen(
                     LazyColumn {
                         items(uiState.conversationIds) { convId ->
                             val isCurrent = convId == uiState.conversationId
-                            ListItem(
-                                headlineContent = { Text("对话 ${convId.take(8)}...", maxLines = 1) },
-                                supportingContent = { Text(if (isCurrent) "当前" else "", color = MaterialTheme.colorScheme.primary) },
-                                modifier = Modifier.clickable {
-                                    onLoadConversation(convId)
-                                    showHistoryDrawer = false
-                                },
-                                colors = if (isCurrent) ListItemDefaults.colors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                                ) else ListItemDefaults.colors(),
-                                trailingContent = {
-                                    IconButton(onClick = { onDeleteConversation(convId) }) {
-                                        Icon(Icons.Default.Delete, "删除", modifier = Modifier.size(18.dp))
+                            val title = uiState.conversationTitles[convId]
+                            Box {
+                                ListItem(
+                                    headlineContent = {
+                                        Text(
+                                            if (title != null) title else "对话 ${convId.take(8)}...",
+                                            maxLines = 1
+                                        )
+                                    },
+                                    supportingContent = { Text(if (isCurrent) "当前" else "", color = MaterialTheme.colorScheme.primary) },
+                                    modifier = Modifier.combinedClickable(
+                                        onClick = {
+                                            onLoadConversation(convId)
+                                            showHistoryDrawer = false
+                                        },
+                                        onLongClick = { drawerMenuConvId = convId }
+                                    ),
+                                    colors = if (isCurrent) ListItemDefaults.colors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                                    ) else ListItemDefaults.colors(),
+                                    trailingContent = {
+                                        IconButton(onClick = { onDeleteConversation(convId) }) {
+                                            Icon(Icons.Default.Delete, "删除", modifier = Modifier.size(18.dp))
+                                        }
                                     }
+                                )
+                                DropdownMenu(
+                                    expanded = drawerMenuConvId == convId,
+                                    onDismissRequest = { drawerMenuConvId = null }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("重命名") },
+                                        onClick = {
+                                            drawerMenuConvId = null
+                                            renameConvId = convId
+                                            renameText = title ?: ""
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("AI 总结标题") },
+                                        onClick = {
+                                            drawerMenuConvId = null
+                                            onAiSummarizeTitle(convId)
+                                        }
+                                    )
                                 }
-                            )
+                            }
                         }
                     }
                 }
@@ -344,6 +419,8 @@ fun ChatScreen(
                     }
 
                     MessageInput(
+                        text = inputText,
+                        onTextChange = { inputText = it },
                         onSend = onSendMessage,
                         enabled = !uiState.isStreaming
                     )

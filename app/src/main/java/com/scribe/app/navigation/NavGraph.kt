@@ -46,6 +46,8 @@ fun AppNavGraph() {
                 onNewConversation = { chatViewModel.newConversation() },
                 onLoadConversation = { chatViewModel.loadConversation(it) },
                 onDeleteConversation = { chatViewModel.deleteConversation(it) },
+                onRenameConversation = { convId, title -> chatViewModel.updateConversationTitle(convId, title) },
+                onAiSummarizeTitle = { chatViewModel.aiSummarizeTitle(it) },
                 onSkillSelected = { chatViewModel.loadSkill(it) },
                 onDeleteSkill = { chatViewModel.deleteSkill(it) },
                 onImportSkill = { chatViewModel.importSkill(it) },

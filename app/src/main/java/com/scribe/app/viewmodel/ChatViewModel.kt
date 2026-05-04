@@ -29,13 +29,14 @@ data class ChatUiState(
     val showReasoning: Boolean = true,
     val aiThinking: Boolean = true,
     val collapsedReasoningIds: Set<String> = emptySet(),
-    val scrollToBottomTrigger: Long = 0L
+    val scrollToBottomTrigger: Long = 0L,
+    val conversationTitles: Map<String, String> = emptyMap()
 )
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = AppDatabase.getInstance(application)
-    private val chatRepo = ChatRepository(db.messageDao())
+    private val chatRepo = ChatRepository(db.messageDao(), db.conversationDao())
     private val skillRepo = SkillRepository(application)
     private val settingsStore = SettingsDataStore(application)
 
@@ -87,10 +88,80 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         refreshSkillMetas()
+        refreshConversationTitles()
     }
 
     private fun refreshSkillMetas() {
         _uiState.update { it.copy(skillMetas = skillRepo.getSkillMetas()) }
+    }
+
+    private fun refreshConversationTitles() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(conversationTitles = chatRepo.getAllConversationTitles()) }
+        }
+    }
+
+    fun updateConversationTitle(convId: String, title: String) {
+        viewModelScope.launch {
+            chatRepo.updateConversationTitle(convId, title)
+            refreshConversationTitles()
+        }
+    }
+
+    fun aiSummarizeTitle(convId: String) {
+        if (_uiState.value.isStreaming) return
+        viewModelScope.launch {
+            val (messages, _) = chatRepo.loadMessages(convId)
+            val visible = messages.filter { it.role != MessageRole.SYSTEM && it.content.isNotBlank() }
+            if (visible.isEmpty()) return@launch
+
+            val conversationText = visible.joinToString("\n") { msg ->
+                "${if (msg.role == MessageRole.USER) "User" else "Assistant"}: ${msg.content}"
+            }
+
+            val prompt = listOf(
+                mapOf("role" to "user", "content" to "用不超过10个字总结以下对话的主题，只输出标题文本，不要引号或额外解释：\n\n$conversationText")
+            )
+
+            val settings = currentSettings
+            val baseUrl = when (_uiState.value.provider) {
+                Provider.OPENAI -> settings.openaiBaseUrl
+                Provider.ANTHROPIC -> settings.anthropicBaseUrl
+            }
+            val apiKey = when (_uiState.value.provider) {
+                Provider.OPENAI -> settings.openaiApiKey
+                Provider.ANTHROPIC -> settings.anthropicApiKey
+            }
+            val model = when (_uiState.value.provider) {
+                Provider.OPENAI -> settings.openaiModel
+                Provider.ANTHROPIC -> settings.anthropicModel
+            }
+
+            if (apiKey.isBlank()) return@launch
+
+            var result = ""
+            LLMService.chat(
+                messages = prompt,
+                provider = _uiState.value.provider,
+                baseUrl = baseUrl,
+                apiKey = apiKey,
+                model = model,
+                aiThinking = false
+            ).collect { event ->
+                when (event) {
+                    is StreamEvent.Content -> result += event.text
+                    is StreamEvent.Error -> return@collect
+                    is StreamEvent.Done -> {
+                        val title = result.trim().take(20)
+                        if (title.isNotBlank()) {
+                            chatRepo.updateConversationTitle(convId, title)
+                            refreshConversationTitles()
+                        }
+                    }
+                    else -> {}
+                }
+            }
+        }
     }
 
     fun newConversation() {
@@ -107,6 +178,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             _uiState.update { it.copy(conversationIds = chatRepo.getAllConversationIds()) }
+            refreshConversationTitles()
         }
     }
 
@@ -154,7 +226,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             chatRepo.deleteConversation(convId)
             val ids = chatRepo.getAllConversationIds()
-            _uiState.update { it.copy(conversationIds = ids) }
+            val titles = chatRepo.getAllConversationTitles()
+            _uiState.update { it.copy(conversationIds = ids, conversationTitles = titles) }
             if (convId == _uiState.value.conversationId) {
                 newConversation()
             }

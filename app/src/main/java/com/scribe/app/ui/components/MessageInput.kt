@@ -5,19 +5,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun MessageInput(
+    text: String,
+    onTextChange: (String) -> Unit,
     onSend: (String) -> Unit,
     enabled: Boolean,
     modifier: Modifier = Modifier
 ) {
-    var text by remember { mutableStateOf("") }
-
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -26,7 +26,7 @@ fun MessageInput(
     ) {
         OutlinedTextField(
             value = text,
-            onValueChange = { text = it },
+            onValueChange = onTextChange,
             placeholder = { Text("输入消息...") },
             modifier = Modifier.weight(1f),
             enabled = enabled,
@@ -40,7 +40,7 @@ fun MessageInput(
             onClick = {
                 if (text.isNotBlank()) {
                     onSend(text.trim())
-                    text = ""
+                    onTextChange("")
                 }
             },
             enabled = enabled && text.isNotBlank(),
