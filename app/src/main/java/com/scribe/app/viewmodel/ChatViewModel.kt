@@ -230,6 +230,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    suspend fun fetchConversationSummary(convId: String): String? {
+        return chatRepo.getConversationSummary(convId)
+    }
+
     fun clearConversationSummary(convId: String) {
         viewModelScope.launch {
             chatRepo.clearConversationSummary(convId)

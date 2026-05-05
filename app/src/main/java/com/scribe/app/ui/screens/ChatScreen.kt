@@ -56,6 +56,7 @@ fun ChatScreen(
     onImportConversation: (Uri) -> Unit,
     onCompressContext: (String) -> Unit,
     onClearConversationSummary: (String) -> Unit,
+    onFetchConversationSummary: suspend (String) -> String?,
     skillMetas: List<SkillManager.SkillMeta>,
     modifier: Modifier = Modifier
 ) {
@@ -69,6 +70,8 @@ fun ChatScreen(
     var drawerMenuConvId by remember { mutableStateOf<String?>(null) }
     var deleteConfirmConvId by remember { mutableStateOf<String?>(null) }
     var exportTargetConvId by remember { mutableStateOf<String?>(null) }
+    var clearSummaryConvId by remember { mutableStateOf<String?>(null) }
+    var clearSummaryText by remember { mutableStateOf<String?>(null) }
 
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
@@ -324,6 +327,36 @@ fun ChatScreen(
         )
     }
 
+    if (clearSummaryConvId != null && clearSummaryText != null) {
+        AlertDialog(
+            onDismissRequest = {
+                clearSummaryConvId = null
+                clearSummaryText = null
+            },
+            title = { Text("对话摘要") },
+            text = {
+                Text(clearSummaryText!!, style = MaterialTheme.typography.bodyMedium)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    clearSummaryConvId?.let { onClearConversationSummary(it) }
+                    clearSummaryConvId = null
+                    clearSummaryText = null
+                }) {
+                    Text("清除摘要", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    clearSummaryConvId = null
+                    clearSummaryText = null
+                }) {
+                    Text("保留")
+                }
+            }
+        )
+    }
+
     ModalNavigationDrawer(
         drawerState = rememberDrawerState(initialValue = DrawerValue.Closed).also {
             if (showHistoryDrawer) {
@@ -428,7 +461,11 @@ fun ChatScreen(
                                         text = { Text("清除摘要") },
                                         onClick = {
                                             drawerMenuConvId = null
-                                            onClearConversationSummary(convId)
+                                            clearSummaryConvId = convId
+                                            clearSummaryText = null
+                                            scope.launch {
+                                                clearSummaryText = onFetchConversationSummary(convId) ?: "(无摘要)"
+                                            }
                                         }
                                     )
                                 }

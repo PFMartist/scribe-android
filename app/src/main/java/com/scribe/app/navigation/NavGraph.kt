@@ -62,6 +62,7 @@ fun AppNavGraph() {
                 onImportConversation = { uri -> chatViewModel.importConversation(uri) },
                 onCompressContext = { chatViewModel.compressContext(it) },
                 onClearConversationSummary = { chatViewModel.clearConversationSummary(it) },
+                onFetchConversationSummary = { chatViewModel.fetchConversationSummary(it) },
                 skillMetas = chatState.skillMetas
             )
         }
