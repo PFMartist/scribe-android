@@ -14,7 +14,6 @@ import com.scribe.app.network.LLMService
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
@@ -673,7 +672,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 else msg
             }
 
-        runBlocking {
+        viewModelScope.launch {
             chatRepo.saveMessages(state.conversationId, partial, currentSkill?.id)
         }
 
