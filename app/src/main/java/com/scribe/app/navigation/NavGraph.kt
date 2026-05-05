@@ -57,6 +57,11 @@ fun AppNavGraph() {
                 onDeleteMessage = { chatViewModel.deleteMessage(it) },
                 onRegenerateLastResponse = { chatViewModel.regenerateLastResponse() },
                 onBindSkillToConversation = { chatViewModel.bindSkillToConversation(it) },
+                onStopGeneration = { chatViewModel.stopGeneration() },
+                onExportConversation = { convId, uri -> chatViewModel.exportConversation(convId, uri) },
+                onImportConversation = { uri -> chatViewModel.importConversation(uri) },
+                onCompressContext = { chatViewModel.compressContext(it) },
+                onClearConversationSummary = { chatViewModel.clearConversationSummary(it) },
                 skillMetas = chatState.skillMetas
             )
         }

@@ -30,6 +30,9 @@ fun ChatBubble(
     reasoning: String = "",
     reasoningExpanded: Boolean = true,
     onToggleReasoning: () -> Unit = {},
+    onCopy: (() -> Unit)? = null,
+    onShare: (() -> Unit)? = null,
+    onEdit: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     onRegenerate: (() -> Unit)? = null,
     incomplete: Boolean = false,
@@ -39,6 +42,8 @@ fun ChatBubble(
     if (content.isBlank() && reasoning.isBlank()) return
 
     val isUser = role == MessageRole.USER
+    var showMenu by remember { mutableStateOf(false) }
+    val hasMenu = onCopy != null || onShare != null || onEdit != null || onDelete != null
 
     Row(
         modifier = modifier
@@ -50,9 +55,9 @@ fun ChatBubble(
             modifier = Modifier
                 .widthIn(max = 340.dp)
                 .then(
-                    if (isUser && onDelete != null) {
+                    if (hasMenu) {
                         Modifier.pointerInput(Unit) {
-                            detectTapGestures(onLongPress = { onDelete.invoke() })
+                            detectTapGestures(onLongPress = { showMenu = true })
                         }
                     } else Modifier
                 )
@@ -169,6 +174,39 @@ fun ChatBubble(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
                     )
+                }
+            }
+
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false }
+            ) {
+                if (onCopy != null) {
+                    DropdownMenuItem(
+                        text = { Text("复制") },
+                        onClick = { showMenu = false; onCopy() }
+                    )
+                }
+                if (isUser) {
+                    if (onEdit != null) {
+                        DropdownMenuItem(
+                            text = { Text("编辑") },
+                            onClick = { showMenu = false; onEdit() }
+                        )
+                    }
+                    if (onDelete != null) {
+                        DropdownMenuItem(
+                            text = { Text("撤回", color = MaterialTheme.colorScheme.error) },
+                            onClick = { showMenu = false; onDelete() }
+                        )
+                    }
+                } else {
+                    if (onShare != null) {
+                        DropdownMenuItem(
+                            text = { Text("分享") },
+                            onClick = { showMenu = false; onShare() }
+                        )
+                    }
                 }
             }
         }

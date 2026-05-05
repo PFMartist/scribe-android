@@ -62,13 +62,36 @@ class ChatRepository(
     }
 
     suspend fun updateConversationTitle(conversationId: String, title: String) {
-        conversationDao.insert(ConversationEntity(id = conversationId, title = title))
+        val existing = conversationDao.getConversation(conversationId)
+        conversationDao.insert(ConversationEntity(
+            id = conversationId,
+            title = title,
+            summary = existing?.summary,
+            createdAt = existing?.createdAt ?: System.currentTimeMillis()
+        ))
     }
 
     suspend fun getAllConversationTitles(): Map<String, String> {
         return conversationDao.getAllTitles()
             .filter { it.title != null }
             .associate { it.id to it.title!! }
+    }
+
+    suspend fun importConversation(convId: String, title: String, messages: List<ChatMessage>) {
+        conversationDao.insert(ConversationEntity(id = convId, title = title))
+        saveMessages(convId, messages, null)
+    }
+
+    suspend fun updateConversationSummary(convId: String, summary: String) {
+        conversationDao.updateSummary(convId, summary)
+    }
+
+    suspend fun getConversationSummary(convId: String): String? {
+        return conversationDao.getSummary(convId)
+    }
+
+    suspend fun clearConversationSummary(convId: String) {
+        conversationDao.clearSummary(convId)
     }
 
     fun newConversationId(): String = UUID.randomUUID().toString()

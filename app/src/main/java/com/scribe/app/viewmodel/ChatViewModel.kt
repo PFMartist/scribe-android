@@ -7,6 +7,7 @@ import com.scribe.app.data.local.AppDatabase
 import com.scribe.app.data.local.SettingsDataStore
 import com.scribe.app.data.model.*
 import com.scribe.app.data.repository.ChatRepository
+import com.scribe.app.data.repository.ConversationExporter
 import com.scribe.app.data.repository.SkillManager
 import com.scribe.app.data.repository.SkillRepository
 import com.scribe.app.network.LLMService
@@ -30,7 +31,8 @@ data class ChatUiState(
     val aiThinking: Boolean = true,
     val collapsedReasoningIds: Set<String> = emptySet(),
     val scrollToBottomTrigger: Long = 0L,
-    val conversationTitles: Map<String, String> = emptyMap()
+    val conversationTitles: Map<String, String> = emptyMap(),
+    val conversationSummary: String? = null
 )
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
@@ -164,6 +166,79 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun compressContext(convId: String) {
+        if (_uiState.value.isStreaming) return
+        viewModelScope.launch {
+            val (allMessages, _) = chatRepo.loadMessages(convId)
+            val visible = allMessages.filter { it.role != MessageRole.SYSTEM }
+            val keepCount = 5
+
+            if (visible.size <= keepCount) return@launch
+
+            val toSummarize = visible.dropLast(keepCount)
+
+            val conversationText = toSummarize.joinToString("\n") { msg ->
+                "${if (msg.role == MessageRole.USER) "User" else "Assistant"}: ${msg.content}"
+            }
+
+            if (conversationText.isBlank()) return@launch
+
+            val prompt = listOf(
+                mapOf("role" to "user", "content" to "用简短的文字总结以下对话的关键信息和上下文，保留重要事实、决定和讨论要点：\n\n$conversationText")
+            )
+
+            val settings = currentSettings
+            val baseUrl = when (_uiState.value.provider) {
+                Provider.OPENAI -> settings.openaiBaseUrl
+                Provider.ANTHROPIC -> settings.anthropicBaseUrl
+            }
+            val apiKey = when (_uiState.value.provider) {
+                Provider.OPENAI -> settings.openaiApiKey
+                Provider.ANTHROPIC -> settings.anthropicApiKey
+            }
+            val model = when (_uiState.value.provider) {
+                Provider.OPENAI -> settings.openaiModel
+                Provider.ANTHROPIC -> settings.anthropicModel
+            }
+
+            if (apiKey.isBlank()) return@launch
+
+            var result = ""
+            LLMService.chat(
+                messages = prompt,
+                provider = _uiState.value.provider,
+                baseUrl = baseUrl,
+                apiKey = apiKey,
+                model = model,
+                aiThinking = false
+            ).collect { event ->
+                when (event) {
+                    is StreamEvent.Content -> result += event.text
+                    is StreamEvent.Error -> return@collect
+                    is StreamEvent.Done -> {
+                        val summary = result.trim()
+                        if (summary.isNotBlank()) {
+                            chatRepo.updateConversationSummary(convId, summary)
+                            if (convId == _uiState.value.conversationId) {
+                                _uiState.update { it.copy(conversationSummary = summary) }
+                            }
+                        }
+                    }
+                    else -> {}
+                }
+            }
+        }
+    }
+
+    fun clearConversationSummary(convId: String) {
+        viewModelScope.launch {
+            chatRepo.clearConversationSummary(convId)
+            if (convId == _uiState.value.conversationId) {
+                _uiState.update { it.copy(conversationSummary = null) }
+            }
+        }
+    }
+
     fun newConversation() {
         streamingMessageId = null
         val convId = chatRepo.newConversationId()
@@ -173,7 +248,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 isStreaming = false,
                 streamError = null,
                 tokenUsage = null,
-                conversationId = convId
+                conversationId = convId,
+                conversationSummary = null
             )
         }
         viewModelScope.launch {
@@ -209,6 +285,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             val msgs = buildSystemMessage(currentSkill) + stored
+            val summary = chatRepo.getConversationSummary(convId)
             _uiState.update {
                 it.copy(
                     messages = msgs,
@@ -216,7 +293,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     isStreaming = false,
                     streamError = null,
                     tokenUsage = null,
-                    scrollToBottomTrigger = it.scrollToBottomTrigger + 1
+                    scrollToBottomTrigger = it.scrollToBottomTrigger + 1,
+                    conversationSummary = summary
                 )
             }
         }
@@ -337,10 +415,25 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
-            val allMessages = _uiState.value.messages
-            val apiMessages = allMessages
-                .filter { it.content.isNotBlank() || it.role == MessageRole.SYSTEM }
-                .map { mapOf("role" to it.role.name.lowercase(), "content" to it.content) }
+            val state = _uiState.value
+            val allMessages = state.messages
+            val summary = state.conversationSummary
+            val apiMessages = if (summary != null) {
+                val visible = allMessages.filter { it.role != MessageRole.SYSTEM && it.content.isNotBlank() }
+                val recent = visible.takeLast(5)
+                val skillMsg = allMessages.firstOrNull { it.role == MessageRole.SYSTEM }
+                buildList {
+                    if (skillMsg != null) {
+                        add(mapOf("role" to "system", "content" to skillMsg.content))
+                    }
+                    add(mapOf("role" to "system", "content" to "📝 历史对话摘要:\n$summary"))
+                    addAll(recent.map { mapOf("role" to it.role.name.lowercase(), "content" to it.content) })
+                }
+            } else {
+                allMessages
+                    .filter { it.content.isNotBlank() || it.role == MessageRole.SYSTEM }
+                    .map { mapOf("role" to it.role.name.lowercase(), "content" to it.content) }
+            }
 
             // Start with prefill content when continuing an interrupted stream
             val prefillStart = allMessages.find { it.id == assistantId }?.content ?: ""
@@ -497,6 +590,68 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val set = state.collapsedReasoningIds.toMutableSet()
             if (set.contains(messageId)) set.remove(messageId) else set.add(messageId)
             state.copy(collapsedReasoningIds = set)
+        }
+    }
+
+    fun stopGeneration() {
+        val job = streamingJob ?: return
+        if (!job.isActive) return
+
+        val state = _uiState.value
+        val streamingId = streamingMessageId
+        val partial = state.messages
+            .filter { it.role != MessageRole.SYSTEM && it.content.isNotBlank() }
+            .map { msg ->
+                if (streamingId != null && msg.id == streamingId) msg.copy(incomplete = true)
+                else msg
+            }
+
+        viewModelScope.launch {
+            chatRepo.saveMessages(state.conversationId, partial, currentSkill?.id)
+            _uiState.update { it.copy(conversationIds = chatRepo.getAllConversationIds()) }
+        }
+
+        job.cancel()
+        _uiState.update { state ->
+            val msgs = state.messages.toMutableList()
+            val idx = msgs.indexOfLast { it.id == streamingId }
+            if (idx >= 0) {
+                msgs[idx] = msgs[idx].copy(incomplete = true)
+            }
+            state.copy(messages = msgs, isStreaming = false)
+        }
+    }
+
+    fun exportConversation(convId: String, uri: android.net.Uri) {
+        viewModelScope.launch {
+            try {
+                val exporter = ConversationExporter(chatRepo)
+                val json = exporter.exportToJson(convId)
+                getApplication<Application>().contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(json.toByteArray(Charsets.UTF_8))
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(streamError = "导出失败: ${e.message}") }
+            }
+        }
+    }
+
+    fun importConversation(uri: android.net.Uri) {
+        viewModelScope.launch {
+            try {
+                val json = getApplication<Application>().contentResolver.openInputStream(uri)?.use {
+                    it.reader().readText()
+                } ?: throw Exception("无法读取文件")
+                val exporter = ConversationExporter(chatRepo)
+                val (convId, title, messages) = exporter.importFromJson(json) ?: throw Exception("文件格式错误")
+                chatRepo.importConversation(convId, title, messages)
+                refreshConversationTitles()
+                _uiState.update {
+                    it.copy(conversationIds = chatRepo.getAllConversationIds())
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(streamError = "导入失败: ${e.message}") }
+            }
         }
     }
 

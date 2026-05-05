@@ -1,11 +1,11 @@
 package com.scribe.app.ui.screens
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,11 +17,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.scribe.app.data.model.MessageRole
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.scribe.app.data.repository.SkillManager
 import com.scribe.app.ui.components.ChatBubble
 import com.scribe.app.ui.components.MessageInput
@@ -47,6 +51,11 @@ fun ChatScreen(
     onDeleteMessage: (String) -> Unit,
     onRegenerateLastResponse: () -> Unit,
     onBindSkillToConversation: (String) -> Unit,
+    onStopGeneration: () -> Unit,
+    onExportConversation: (String, Uri) -> Unit,
+    onImportConversation: (Uri) -> Unit,
+    onCompressContext: (String) -> Unit,
+    onClearConversationSummary: (String) -> Unit,
     skillMetas: List<SkillManager.SkillMeta>,
     modifier: Modifier = Modifier
 ) {
@@ -58,6 +67,12 @@ fun ChatScreen(
     var renameConvId by remember { mutableStateOf<String?>(null) }
     var renameText by remember { mutableStateOf("") }
     var drawerMenuConvId by remember { mutableStateOf<String?>(null) }
+    var deleteConfirmConvId by remember { mutableStateOf<String?>(null) }
+    var exportTargetConvId by remember { mutableStateOf<String?>(null) }
+
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val zipFilePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -65,6 +80,23 @@ fun ChatScreen(
         if (uri != null) {
             onImportSkillZip(uri)
             showImportDialog = false
+        }
+    }
+
+    val exportFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            exportTargetConvId?.let { onExportConversation(it, uri) }
+            exportTargetConvId = null
+        }
+    }
+
+    val importFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            onImportConversation(uri)
         }
     }
 
@@ -271,6 +303,27 @@ fun ChatScreen(
         )
     }
 
+    if (deleteConfirmConvId != null) {
+        AlertDialog(
+            onDismissRequest = { deleteConfirmConvId = null },
+            title = { Text("删除对话") },
+            text = { Text("确定要删除此对话吗？此操作不可撤销。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleteConfirmConvId?.let { onDeleteConversation(it) }
+                    deleteConfirmConvId = null
+                }) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteConfirmConvId = null }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
     ModalNavigationDrawer(
         drawerState = rememberDrawerState(initialValue = DrawerValue.Closed).also {
             if (showHistoryDrawer) {
@@ -280,11 +333,23 @@ fun ChatScreen(
         gesturesEnabled = true,
         drawerContent = {
             ModalDrawerSheet {
-                Text(
-                    "对话历史",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(16.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "对话历史",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = {
+                        importFileLauncher.launch(arrayOf("application/json", "*/*"))
+                    }) {
+                        Icon(Icons.Default.FileOpen, "导入对话", modifier = Modifier.size(20.dp))
+                    }
+                }
                 HorizontalDivider()
 
                 if (uiState.conversationIds.isEmpty()) {
@@ -319,7 +384,7 @@ fun ChatScreen(
                                         containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
                                     ) else ListItemDefaults.colors(),
                                     trailingContent = {
-                                        IconButton(onClick = { onDeleteConversation(convId) }) {
+                                        IconButton(onClick = { deleteConfirmConvId = convId }) {
                                             Icon(Icons.Default.Delete, "删除", modifier = Modifier.size(18.dp))
                                         }
                                     }
@@ -341,6 +406,29 @@ fun ChatScreen(
                                         onClick = {
                                             drawerMenuConvId = null
                                             onAiSummarizeTitle(convId)
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("导出") },
+                                        onClick = {
+                                            drawerMenuConvId = null
+                                            exportTargetConvId = convId
+                                            val filename = "${title ?: convId.take(8)}.json"
+                                            exportFileLauncher.launch(filename)
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("压缩上下文") },
+                                        onClick = {
+                                            drawerMenuConvId = null
+                                            onCompressContext(convId)
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("清除摘要") },
+                                        onClick = {
+                                            drawerMenuConvId = null
+                                            onClearConversationSummary(convId)
                                         }
                                     )
                                 }
@@ -422,7 +510,9 @@ fun ChatScreen(
                         text = inputText,
                         onTextChange = { inputText = it },
                         onSend = onSendMessage,
-                        enabled = !uiState.isStreaming
+                        enabled = !uiState.isStreaming,
+                        isStreaming = uiState.isStreaming,
+                        onStop = onStopGeneration
                     )
                 }
             }
@@ -446,49 +536,89 @@ fun ChatScreen(
                         )
                     }
                 } else {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 4.dp),
-                        contentPadding = PaddingValues(vertical = 8.dp)
-                    ) {
-                        items(
-                            items = visibleMessages,
-                            key = { it.id }
-                        ) { msg ->
-                            ChatBubble(
-                                role = msg.role,
-                                content = msg.content,
-                                reasoning = msg.reasoning,
-                                reasoningExpanded = msg.id !in uiState.collapsedReasoningIds,
-                                onToggleReasoning = { onToggleReasoning(msg.id) },
-                                onDelete = if (msg.role == MessageRole.USER) {
-                                    { messageToDelete = msg.id }
-                                } else null,
-                                onRegenerate = if (msg.role == MessageRole.ASSISTANT
-                                    && msg.id == lastAssistant?.id
-                                    && (lastAssistantHasContent || msg.incomplete)
-                                    && !uiState.isStreaming
-                                ) {
-                                    { onRegenerateLastResponse() }
-                                } else null,
-                                incomplete = msg.incomplete
-                            )
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 4.dp),
+                            contentPadding = PaddingValues(vertical = 8.dp)
+                        ) {
+                            items(
+                                items = visibleMessages,
+                                key = { it.id }
+                            ) { msg ->
+                                ChatBubble(
+                                    role = msg.role,
+                                    content = msg.content,
+                                    reasoning = msg.reasoning,
+                                    reasoningExpanded = msg.id !in uiState.collapsedReasoningIds,
+                                    onToggleReasoning = { onToggleReasoning(msg.id) },
+                                    onCopy = {
+                                        clipboardManager.setText(AnnotatedString(msg.content))
+                                    },
+                                    onShare = if (msg.role == MessageRole.ASSISTANT) {
+                                        {
+                                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_TEXT, msg.content)
+                                            }
+                                            context.startActivity(Intent.createChooser(intent, "分享消息"))
+                                        }
+                                    } else null,
+                                    onEdit = if (msg.role == MessageRole.USER) {
+                                        {
+                                            inputText = msg.content
+                                            onDeleteMessage(msg.id)
+                                        }
+                                    } else null,
+                                    onDelete = if (msg.role == MessageRole.USER) {
+                                        { messageToDelete = msg.id }
+                                    } else null,
+                                    onRegenerate = if (msg.role == MessageRole.ASSISTANT
+                                        && msg.id == lastAssistant?.id
+                                        && (lastAssistantHasContent || msg.incomplete)
+                                        && !uiState.isStreaming
+                                    ) {
+                                        { onRegenerateLastResponse() }
+                                    } else null,
+                                    incomplete = msg.incomplete
+                                )
+                            }
+
+                            if (uiState.isStreaming &&
+                                visibleMessages.none { it.role == MessageRole.ASSISTANT }
+                            ) {
+                                item(key = "loading") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                    }
+                                }
+                            }
                         }
 
-                        if (uiState.isStreaming &&
-                            visibleMessages.none { it.role == MessageRole.ASSISTANT }
-                        ) {
-                            item(key = "loading") {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                                }
+                        if (userScrolledUp && visibleMessages.isNotEmpty()) {
+                            SmallFloatingActionButton(
+                                onClick = {
+                                    userScrolledUp = false
+                                    scope.launch {
+                                        listState.scrollToEnd()
+                                    }
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(16.dp),
+                                containerColor = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Icon(
+                                    Icons.Default.KeyboardArrowDown,
+                                    "滚动到底部"
+                                )
                             }
                         }
                     }

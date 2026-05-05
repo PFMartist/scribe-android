@@ -9,7 +9,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 data class ConversationEntity(
     @PrimaryKey val id: String,
     @ColumnInfo(name = "title") val title: String? = null,
-    @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis()
+    @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(name = "summary") val summary: String? = null
 )
 
 @Entity(tableName = "messages")
@@ -37,8 +38,20 @@ interface ConversationDao {
     @Query("SELECT * FROM conversations")
     suspend fun getAllTitles(): List<ConversationEntity>
 
+    @Query("SELECT * FROM conversations WHERE id = :convId")
+    suspend fun getConversation(convId: String): ConversationEntity?
+
     @Query("DELETE FROM conversations WHERE id = :convId")
     suspend fun delete(convId: String)
+
+    @Query("UPDATE conversations SET summary = :summary WHERE id = :convId")
+    suspend fun updateSummary(convId: String, summary: String)
+
+    @Query("SELECT summary FROM conversations WHERE id = :convId")
+    suspend fun getSummary(convId: String): String?
+
+    @Query("UPDATE conversations SET summary = NULL WHERE id = :convId")
+    suspend fun clearSummary(convId: String)
 }
 
 @Dao
@@ -62,7 +75,7 @@ interface MessageDao {
     suspend fun updateSkillId(convId: String, skillId: String?)
 }
 
-@Database(entities = [ConversationEntity::class, MessageEntity::class], version = 4, exportSchema = false)
+@Database(entities = [ConversationEntity::class, MessageEntity::class], version = 5, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun conversationDao(): ConversationDao
@@ -70,6 +83,12 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
+
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE conversations ADD COLUMN summary TEXT")
+            }
+        }
 
         private val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -95,7 +114,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "scribe_history.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build().also { INSTANCE = it }
             }
         }
