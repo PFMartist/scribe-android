@@ -6,6 +6,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -337,7 +339,13 @@ fun ChatScreen(
             },
             title = { Text("对话摘要") },
             text = {
-                Text(clearSummaryText!!, style = MaterialTheme.typography.bodyMedium)
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 300.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(clearSummaryText!!, style = MaterialTheme.typography.bodyMedium)
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -367,7 +375,13 @@ fun ChatScreen(
             },
             title = { Text("对话摘要") },
             text = {
-                Text(viewSummaryText!!, style = MaterialTheme.typography.bodyMedium)
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 300.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(viewSummaryText!!, style = MaterialTheme.typography.bodyMedium)
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
