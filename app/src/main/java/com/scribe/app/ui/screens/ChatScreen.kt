@@ -70,6 +70,8 @@ fun ChatScreen(
     var drawerMenuConvId by remember { mutableStateOf<String?>(null) }
     var deleteConfirmConvId by remember { mutableStateOf<String?>(null) }
     var exportTargetConvId by remember { mutableStateOf<String?>(null) }
+    var viewSummaryConvId by remember { mutableStateOf<String?>(null) }
+    var viewSummaryText by remember { mutableStateOf<String?>(null) }
     var clearSummaryConvId by remember { mutableStateOf<String?>(null) }
     var clearSummaryText by remember { mutableStateOf<String?>(null) }
 
@@ -357,6 +359,27 @@ fun ChatScreen(
         )
     }
 
+    if (viewSummaryConvId != null && viewSummaryText != null) {
+        AlertDialog(
+            onDismissRequest = {
+                viewSummaryConvId = null
+                viewSummaryText = null
+            },
+            title = { Text("对话摘要") },
+            text = {
+                Text(viewSummaryText!!, style = MaterialTheme.typography.bodyMedium)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewSummaryConvId = null
+                    viewSummaryText = null
+                }) {
+                    Text("关闭")
+                }
+            }
+        )
+    }
+
     ModalNavigationDrawer(
         drawerState = rememberDrawerState(initialValue = DrawerValue.Closed).also {
             if (showHistoryDrawer) {
@@ -458,6 +481,17 @@ fun ChatScreen(
                                         }
                                     )
                                     DropdownMenuItem(
+                                        text = { Text("查看摘要") },
+                                        onClick = {
+                                            drawerMenuConvId = null
+                                            viewSummaryConvId = convId
+                                            viewSummaryText = null
+                                            scope.launch {
+                                                viewSummaryText = onFetchConversationSummary(convId) ?: "(无摘要)"
+                                            }
+                                        }
+                                    )
+                                    DropdownMenuItem(
                                         text = { Text("清除摘要") },
                                         onClick = {
                                             drawerMenuConvId = null
@@ -543,6 +577,23 @@ fun ChatScreen(
                         )
                     }
 
+                    if (uiState.isSummarizing) {
+                        Text(
+                            text = "正在生成摘要...",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    if (uiState.summaryError != null) {
+                        Text(
+                            text = "摘要生成失败: ${uiState.summaryError}",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+                        )
+                    }
+
                     MessageInput(
                         text = inputText,
                         onTextChange = { inputText = it },
@@ -555,7 +606,7 @@ fun ChatScreen(
             }
         ) { padding ->
             Column(modifier = Modifier.padding(padding)) {
-                if (uiState.isStreaming) {
+                if (uiState.isStreaming || uiState.isSummarizing) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
 

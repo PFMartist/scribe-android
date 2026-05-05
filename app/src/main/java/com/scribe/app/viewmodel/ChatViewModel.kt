@@ -31,7 +31,9 @@ data class ChatUiState(
     val collapsedReasoningIds: Set<String> = emptySet(),
     val scrollToBottomTrigger: Long = 0L,
     val conversationTitles: Map<String, String> = emptyMap(),
-    val conversationSummary: String? = null
+    val conversationSummary: String? = null,
+    val isSummarizing: Boolean = false,
+    val summaryError: String? = null
 )
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
@@ -202,6 +204,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
             if (apiKey.isBlank()) return@launch
 
+            _uiState.update { it.copy(isSummarizing = true, summaryError = null) }
+
             var result = ""
             LLMService.chat(
                 messages = prompt,
@@ -210,17 +214,31 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 apiKey = apiKey,
                 model = model,
                 aiThinking = false
-            ).collect { event ->
+            ).catch { e ->
+                val detail = when {
+                    e.message?.contains("Unable to resolve host") == true -> "DNS解析失败"
+                    e.message?.contains("timed out") == true -> "连接超时"
+                    e.message?.contains("connect") == true -> "连接失败: ${e.message}"
+                    else -> e.message ?: "未知错误"
+                }
+                _uiState.update { it.copy(isSummarizing = false, summaryError = "网络错误: $detail") }
+            }.collect { event ->
                 when (event) {
                     is StreamEvent.Content -> result += event.text
-                    is StreamEvent.Error -> return@collect
+                    is StreamEvent.Error -> {
+                        _uiState.update { it.copy(isSummarizing = false, summaryError = event.message) }
+                    }
                     is StreamEvent.Done -> {
                         val summary = result.trim()
                         if (summary.isNotBlank()) {
                             chatRepo.updateConversationSummary(convId, summary)
                             if (convId == _uiState.value.conversationId) {
-                                _uiState.update { it.copy(conversationSummary = summary) }
+                                _uiState.update { it.copy(conversationSummary = summary, isSummarizing = false, summaryError = null) }
+                            } else {
+                                _uiState.update { it.copy(isSummarizing = false, summaryError = null) }
                             }
+                        } else {
+                            _uiState.update { it.copy(isSummarizing = false) }
                         }
                     }
                     else -> {}
