@@ -656,6 +656,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun handleBackground() {
+        if (currentSettings.continueInBackground) return
         val job = streamingJob ?: return
         if (!job.isActive) return
 

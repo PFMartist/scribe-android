@@ -18,6 +18,7 @@ data class SettingsUiState(
     val anthropicModel: String = SettingsDataStore.DEFAULT_ANTHROPIC_MODEL,
     val showReasoning: Boolean = true,
     val aiThinking: Boolean = true,
+    val continueInBackground: Boolean = true,
     val saved: Boolean = false
 )
 
@@ -41,7 +42,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         anthropicApiKey = settings.anthropicApiKey,
                         anthropicModel = settings.anthropicModel,
                         showReasoning = settings.showReasoning,
-                        aiThinking = settings.aiThinking
+                        aiThinking = settings.aiThinking,
+                        continueInBackground = settings.continueInBackground
                     )
                 }
             }
@@ -72,6 +74,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setAiThinking(thinking: Boolean) {
         viewModelScope.launch { settingsStore.setAiThinking(thinking) }
+    }
+
+    fun setContinueInBackground(enabled: Boolean) {
+        viewModelScope.launch { settingsStore.setContinueInBackground(enabled) }
     }
 
     fun clearSavedFlag() {

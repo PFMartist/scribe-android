@@ -74,6 +74,7 @@ fun AppNavGraph() {
                 onSaveAnthropic = { url, key, model -> settingsViewModel.saveAnthropicConfig(url, key, model) },
                 onSetShowReasoning = { settingsViewModel.setShowReasoning(it) },
                 onSetAiThinking = { settingsViewModel.setAiThinking(it) },
+                onSetContinueInBackground = { settingsViewModel.setContinueInBackground(it) },
                 onBack = { navController.popBackStack() }
             )
         }

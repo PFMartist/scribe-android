@@ -21,6 +21,7 @@ fun SettingsScreen(
     onSaveAnthropic: (url: String, key: String, model: String) -> Unit,
     onSetShowReasoning: (Boolean) -> Unit,
     onSetAiThinking: (Boolean) -> Unit,
+    onSetContinueInBackground: (Boolean) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -163,6 +164,13 @@ fun SettingsScreen(
                 Switch(
                     checked = uiState.aiThinking,
                     onCheckedChange = onSetAiThinking
+                )
+            }
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text("后台继续生成", modifier = Modifier.weight(1f))
+                Switch(
+                    checked = uiState.continueInBackground,
+                    onCheckedChange = onSetContinueInBackground
                 )
             }
         }
