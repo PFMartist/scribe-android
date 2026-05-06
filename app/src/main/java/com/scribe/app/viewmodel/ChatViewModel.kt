@@ -41,7 +41,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val db = AppDatabase.getInstance(application)
     private val chatRepo = ChatRepository(db.messageDao(), db.conversationDao())
     private val skillRepo = SkillRepository(application)
-    private val settingsStore = SettingsDataStore(application)
+    private val settingsStore = SettingsDataStore.getInstance(application)
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()

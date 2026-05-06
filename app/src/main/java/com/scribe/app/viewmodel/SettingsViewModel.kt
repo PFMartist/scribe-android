@@ -24,7 +24,7 @@ data class SettingsUiState(
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val settingsStore = SettingsDataStore(application)
+    private val settingsStore = SettingsDataStore.getInstance(application)
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()

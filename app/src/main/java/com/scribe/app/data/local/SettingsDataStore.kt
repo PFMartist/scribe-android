@@ -9,13 +9,22 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-class SettingsDataStore(context: Context) {
+class SettingsDataStore private constructor(context: Context) {
 
     companion object {
         const val DEFAULT_OPENAI_URL = "https://api.deepseek.com"
         const val DEFAULT_OPENAI_MODEL = "deepseek-v4-flash"
         const val DEFAULT_ANTHROPIC_URL = "https://api.anthropic.com"
         const val DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"
+
+        @Volatile
+        private var instance: SettingsDataStore? = null
+
+        fun getInstance(context: Context): SettingsDataStore {
+            return instance ?: synchronized(this) {
+                instance ?: SettingsDataStore(context.applicationContext).also { instance = it }
+            }
+        }
     }
 
     data class AppSettings(
