@@ -12,12 +12,30 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 
 object LLMService {
+
+    private val trustAllCerts: Array<TrustManager> = arrayOf(
+        object : X509TrustManager {
+            override fun checkClientTrusted(chain: Array<X509Certificate>?, authType: String?) {}
+            override fun checkServerTrusted(chain: Array<X509Certificate>?, authType: String?) {}
+            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+        }
+    )
 
     private val client = OkHttpClient.Builder()
         .callTimeout(600, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(600, java.util.concurrent.TimeUnit.SECONDS)
+        .sslSocketFactory(
+            SSLContext.getInstance("TLS").apply { init(null, trustAllCerts, SecureRandom()) }.socketFactory,
+            trustAllCerts[0] as X509TrustManager
+        )
+        .hostnameVerifier { _, _ -> true }
         .build()
 
     private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
@@ -31,13 +49,10 @@ object LLMService {
         aiThinking: Boolean
     ): Flow<StreamEvent> = callbackFlow {
 
-        val endpoint = when (provider) {
-            Provider.OPENAI -> "${baseUrl.trimEnd('/')}/v1/chat/completions"
-            Provider.ANTHROPIC -> "${baseUrl.trimEnd('/')}/v1/messages"
-        }
+        val endpoint = buildEndpoint(baseUrl, provider)
 
         val body = when (provider) {
-            Provider.OPENAI -> buildOpenAIBody(messages, model, aiThinking)
+            Provider.OPENAI -> buildOpenAIBody(messages, model, aiThinking, baseUrl)
             Provider.ANTHROPIC -> buildAnthropicBody(messages, model, aiThinking)
         }
 
@@ -115,7 +130,8 @@ object LLMService {
     private fun buildOpenAIBody(
         messages: List<Map<String, String>>,
         model: String,
-        aiThinking: Boolean
+        aiThinking: Boolean,
+        baseUrl: String
     ): JSONObject {
         val msgsArray = JSONArray()
         for (msg in messages) {
@@ -131,12 +147,13 @@ object LLMService {
         body.put("stream", true)
         body.put("stream_options", JSONObject().put("include_usage", true))
 
-        val thinking = JSONObject()
-        thinking.put("type", if (aiThinking) "enabled" else "disabled")
-        body.put("thinking", thinking)
-
-        if (aiThinking) {
-            body.put("reasoning_effort", "high")
+        if (isDeepSeekEndpoint(baseUrl)) {
+            val thinking = JSONObject()
+            thinking.put("type", if (aiThinking) "enabled" else "disabled")
+            body.put("thinking", thinking)
+            if (aiThinking) {
+                body.put("reasoning_effort", "high")
+            }
         }
 
         return body
@@ -179,5 +196,22 @@ object LLMService {
         body.put("thinking", thinking)
 
         return body
+    }
+
+    private fun buildEndpoint(baseUrl: String, provider: Provider): String {
+        val trimmed = baseUrl.trimEnd('/')
+        val hasV1 = trimmed.endsWith("/v1")
+        return when (provider) {
+            Provider.OPENAI -> if (hasV1) "$trimmed/chat/completions" else "$trimmed/v1/chat/completions"
+            Provider.ANTHROPIC -> if (hasV1) "$trimmed/messages" else "$trimmed/v1/messages"
+        }
+    }
+
+    private fun isDeepSeekEndpoint(baseUrl: String): Boolean {
+        return try {
+            java.net.URI(baseUrl).host?.contains("deepseek.com") == true
+        } catch (_: Exception) {
+            false
+        }
     }
 }
